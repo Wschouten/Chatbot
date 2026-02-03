@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ brand.support_header }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <div class="main-content">
+        <h1>{{ brand.name }}</h1>
+        <p>Welkom bij onze klantenservice. Hoe kunnen we je helpen?</p>
+        <p class="subtitle">Klik op het chat-icoon om met onze {{ brand.product_line }} expert te praten.</p>
+        <p class="subtitle" style="font-size: 0.8em; margin-top: 5px;">(We also offer support in English)</p>
+    </div>
+
+    <!-- Chat Widget Container -->
+    <div class="chat-widget" id="chatWidget">
+        <div class="chat-header">
+            <div class="header-info">
+                <span class="status-dot"></span>
+                <span>{{ brand.support_header }}</span>
+            </div>
+            <button class="close-btn" id="closeChat">&times;</button>
+        </div>
+
+        <!-- GDPR Consent Overlay -->
+        <div class="consent-overlay" id="consentOverlay">
+            <div class="consent-content">
+                <h3>Privacy Notice</h3>
+                <p>
+                    Om je te helpen slaan we je chatberichten tijdelijk op.
+                    Je gegevens worden verwerkt conform onze
+                    <a href="/privacy" target="_blank">privacyverklaring</a>.
+                </p>
+                <p class="consent-subtitle">
+                    To help you, we temporarily store your chat messages.
+                    Your data is processed according to our
+                    <a href="/privacy" target="_blank">privacy policy</a>.
+                </p>
+                <div class="consent-buttons">
+                    <button class="consent-btn consent-accept" id="acceptConsent">
+                        Akkoord / Accept
+                    </button>
+                    <button class="consent-btn consent-decline" id="declineConsent">
+                        Weigeren / Decline
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-body" id="chatBody">
+            <div class="message bot-message">
+                {{ brand.welcome_message_nl }} 🌱<br>
+                <small style="color: #666;">(I also speak English!)</small>
+            </div>
+        </div>
+
+        <div class="chat-input-area" id="chatInputArea">
+            <input type="text" id="userInput" placeholder="Stel je vraag... / Ask your question..." autocomplete="off">
+            <button id="sendBtn">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M22 2L11 13" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Toggle Button -->
+    <button class="chat-toggle-btn" id="toggleChat">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M21 15C21 15.5304 20.7893 16.0391 20.4142 16.4142C20.0391 16.7893 19.5304 17 19 17H7L3 21V5C3 4.46957 3.21071 3.96086 3.58579 3.58579C3.96086 3.21071 4.46957 3 5 3H19C19.5304 3 20.0391 3.21071 20.4142 3.58579C20.7893 3.96086 21 4.46957 21 5V15Z" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </button>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>

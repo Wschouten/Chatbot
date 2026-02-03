@@ -1,0 +1,54 @@
+# Environment variables (contains API keys)
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Sessions (contains user data)
+sessions/
+
+# ChromaDB (large, can be regenerated)
+chroma_db/
+
+# Docker
+.dockerignore
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude Code
+.claude/
+
+# Node (if any)
+node_modules/
+
+# Misc
+nul
+%WilcoS%/

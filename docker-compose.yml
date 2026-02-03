@@ -1,0 +1,22 @@
+services:
+  chatbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      # Map the knowledge base so you can drop files in locally and they appear in the container
+      - ./backend/knowledge_base:/app/backend/knowledge_base
+      # Map the chroma_db so memory persists after restart
+      - ./backend/chroma_db:/app/backend/chroma_db
+      # [NEW] Map Source Code for Instant Updates (Hot Reloading)
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+      # Sessions directory with proper permissions (overrides the bind mount)
+      - sessions_data:/app/backend/sessions
+
+volumes:
+  sessions_data:
