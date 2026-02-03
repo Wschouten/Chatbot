@@ -17,6 +17,9 @@ services:
       - ./frontend:/app/frontend
       # Sessions directory with proper permissions (overrides the bind mount)
       - sessions_data:/app/backend/sessions
+      # Logs directory with proper permissions
+      - logs_data:/app/backend/logs
 
 volumes:
   sessions_data:
+  logs_data:
