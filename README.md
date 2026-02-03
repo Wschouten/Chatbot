@@ -1,11 +1,11 @@
-# GroundCoverGroup Customer Support Chatbot
+# Customer Support Chatbot (work in progress)
 
-A professional, Eurostyle-branded customer support chatbot for GroundCoverGroup. This application features a RAG (Retrieval-Augmented Generation) backend to answer questions strictly from your documents, and a mock shipping status API.
+A professional, customer support chatbot. This application features a RAG (Retrieval-Augmented Generation) backend to answer questions strictly from your documents, and a mock shipping status API.
 
 ## Project Structure
 
 ```
-GroundCoverChatbot/
+
 ├── backend/
 │   ├── app.py              # Main Flask Application
 │   ├── rag_engine.py       # RAG Logic (LangChain + Chroma)
@@ -30,7 +30,7 @@ GroundCoverChatbot/
 
 1.  **Navigate to the backend directory:**
     ```bash
-    cd GroundCoverChatbot/backend
+    cd *BRAND*/backend
     ```
 
 2.  **Create and Activate a Virtual Environment (Optional but Recommended):**
@@ -73,4 +73,4 @@ GroundCoverChatbot/
 - **Chat Widget:** Click the green chat bubble in the bottom right to open the support window.
 - **RAG Q&A:** Ask questions based on the files you put in `knowledge_base`.
 - **Shipment Tracking:** Type "Status for order 123" (or similar) to test the mock API.
-- **Persona:** The bot acts as a polite, professional "Eurostyle" expert.
+- **Persona:** The bot acts as a polite, professional "BRAND" expert.
