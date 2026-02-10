@@ -17,11 +17,37 @@ from dotenv import load_dotenv
 from rag_engine import RagEngine
 from shipping_api import get_shipment_status
 from zendesk_client import ZendeskClient
+from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
 
 # Load environment variables
 load_dotenv()
+
+# =============================================================================
+# SECURITY: ADMIN_API_KEY Startup Validation
+# =============================================================================
+ADMIN_API_KEY = os.environ.get('ADMIN_API_KEY')
+PLACEHOLDER_VALUES = ['', 'CHANGE_ME_generate_a_secure_key_here']
+
+if not ADMIN_API_KEY or ADMIN_API_KEY in PLACEHOLDER_VALUES:
+    # Check if we're in debug/development mode
+    is_debug = os.getenv('FLASK_DEBUG', '').lower() == 'true' or os.getenv('FLASK_ENV', '') == 'development'
+
+    if is_debug:
+        # Debug mode: log warning but allow startup
+        logging.critical(
+            "SECURITY WARNING: ADMIN_API_KEY is not set or uses a placeholder value. "
+            "This is ONLY acceptable in debug/development mode. "
+            "Set a secure key for production!"
+        )
+    else:
+        # Production mode: refuse to start
+        raise SystemExit(
+            "FATAL: ADMIN_API_KEY is not set or uses a placeholder value. "
+            "Set ADMIN_API_KEY to a secure random string in your environment. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(32))'"
+        )
 
 # Configure logging
 logging.basicConfig(
@@ -36,10 +62,25 @@ app = Flask(__name__, template_folder="../frontend/templates", static_folder="..
 # SECURITY: CORS Configuration
 # Only allow requests from whitelisted domains (update for production)
 # =============================================================================
-ALLOWED_ORIGINS = os.environ.get(
-    "ALLOWED_ORIGINS",
-    "http://localhost:5000,http://127.0.0.1:5000"
-).split(",")
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5000,http://127.0.0.1:5000"
+    ).split(",")
+]
+
+# =============================================================================
+# SECURITY: Validate ALLOWED_ORIGINS at Startup
+# =============================================================================
+PLACEHOLDER_PATTERNS = ['your-', 'example', 'placeholder']
+for origin in ALLOWED_ORIGINS:
+    if any(pattern in origin.lower() for pattern in PLACEHOLDER_PATTERNS):
+        logger.warning(
+            "SECURITY WARNING: ALLOWED_ORIGINS contains a placeholder-like value: '%s'. "
+            "This may indicate a misconfiguration. Please verify your CORS settings.",
+            origin
+        )
 
 CORS(app, origins=ALLOWED_ORIGINS, supports_credentials=True)
 
@@ -68,13 +109,19 @@ def add_security_headers(response: Response) -> Response:
     # Content Security Policy - allow framing from allowed origins
     response.headers['Content-Security-Policy'] = (
         "default-src 'self'; "
-        "script-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
         "img-src 'self' data:; "
         "connect-src 'self' " + ' '.join(ALLOWED_ORIGINS) + "; "
         f"frame-ancestors 'self' {frame_ancestors}"
     )
+
+    # Cache-Control headers for API routes
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+
     return response
 
 
@@ -147,7 +194,78 @@ def serve_widget():
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "ok"})
+    """Enhanced health check with dependency awareness."""
+    health_status = {
+        "status": "ok",
+        "dependencies": {}
+    }
+    status_code = 200
+
+    # Check ChromaDB connection
+    try:
+        collection = rag_engine.collection
+        if collection:
+            doc_count = collection.count()
+            health_status["dependencies"]["chromadb"] = {
+                "status": "healthy",
+                "document_count": doc_count
+            }
+        else:
+            health_status["dependencies"]["chromadb"] = {
+                "status": "degraded",
+                "message": "Collection not initialized"
+            }
+            health_status["status"] = "degraded"
+    except Exception as e:
+        health_status["dependencies"]["chromadb"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        health_status["status"] = "unhealthy"
+        status_code = 503
+
+    # Check OpenAI client initialization
+    try:
+        if hasattr(rag_engine, 'client') and rag_engine.client:
+            health_status["dependencies"]["openai"] = {
+                "status": "healthy",
+                "message": "Client initialized"
+            }
+        else:
+            health_status["dependencies"]["openai"] = {
+                "status": "unhealthy",
+                "message": "Client not initialized"
+            }
+            health_status["status"] = "unhealthy"
+            status_code = 503
+    except Exception as e:
+        health_status["dependencies"]["openai"] = {
+            "status": "unhealthy",
+            "error": str(e)
+        }
+        health_status["status"] = "unhealthy"
+        status_code = 503
+
+    # Check escalation method configuration
+    try:
+        escalation_key = "email" if ESCALATION_METHOD == "email" else "zendesk"
+        if escalation_client.use_mock:
+            health_status["dependencies"][escalation_key] = {
+                "status": "mock_mode",
+                "message": f"Using mock {escalation_key} client (no real calls)"
+            }
+        else:
+            health_status["dependencies"][escalation_key] = {
+                "status": "configured",
+                "message": f"{escalation_key.title()} client configured"
+            }
+    except Exception as e:
+        health_status["dependencies"]["escalation"] = {
+            "status": "error",
+            "error": str(e)
+        }
+
+    return jsonify(health_status), status_code
 
 
 @app.route('/api/session', methods=['POST'])
@@ -159,7 +277,15 @@ def create_session() -> Response:
     return jsonify({"session_id": session_id})
 
 # State Machine for Ticket Flow
-zendesk = ZendeskClient()
+# ESCALATION_METHOD: "email" (default) sends SMTP email, "zendesk" creates Zendesk ticket
+ESCALATION_METHOD = os.environ.get("ESCALATION_METHOD", "email").lower()
+
+if ESCALATION_METHOD == "zendesk":
+    escalation_client = ZendeskClient()
+    logger.info("Escalation method: Zendesk ticket creation")
+else:
+    escalation_client = EmailClient()
+    logger.info("Escalation method: SMTP email")
 SESSION_DIR = "sessions"
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
@@ -173,6 +299,19 @@ def sanitize_session_id(session_id: str) -> str:
 def is_valid_email(email: str) -> bool:
     """Validate email address format using RFC 5322 simplified regex."""
     return bool(EMAIL_REGEX.match(email))
+
+
+def _redact_pii_for_log(text: str) -> str:
+    """Redact personally identifiable information from text for logging purposes."""
+    if not text:
+        return text
+    # Replace email addresses with redaction marker
+    redacted = re.sub(
+        r'\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b',
+        '[EMAIL_REDACTED]',
+        text
+    )
+    return redacted
 
 
 def get_session_state(session_id: str) -> dict[str, Any]:
@@ -208,11 +347,11 @@ def chat() -> Response:
 
     # Input validation FIRST (before any processing)
     if not user_message:
-        return jsonify({"response": "Please say something!", "request_id": request_id})
+        return jsonify({"response": "Hé, ik zie niks! 😊 Typ gerust je vraag.", "request_id": request_id})
 
     if len(user_message) > MAX_MESSAGE_LENGTH:
         return jsonify({
-            "response": f"Your message is too long. Please keep it under {MAX_MESSAGE_LENGTH} characters.",
+            "response": f"Oei, dat is een lange tekst! 😅 Kun je het iets korter houden (max {MAX_MESSAGE_LENGTH} tekens)?",
             "request_id": request_id
         })
 
@@ -223,74 +362,107 @@ def chat() -> Response:
     chat_history: list[dict[str, str]] = state_data.get('chat_history', [])
 
     # ---------------------------------------------------------
-    # CANCEL DETECTION: Allow users to exit ticket flow
-    # ---------------------------------------------------------
-    cancel_keywords = {
-        'cancel', 'stop', 'quit', 'exit', 'no', 'never mind', 'nevermind',
-        'annuleren', 'stoppen', 'nee', 'laat maar', 'niet nodig'
-    }
-    user_lower = user_message.lower().strip()
-
-    if current_state in ('awaiting_name', 'awaiting_email') and user_lower in cancel_keywords:
-        # Reset state and preserve chat history
-        state_data = {
-            'state': 'inactive',
-            'chat_history': chat_history
-        }
-        save_session_state(session_id, state_data)
-
-        if user_lang == 'nl':
-            return jsonify({"response": "Geen probleem! Het ticket is geannuleerd. Waarmee kan ik je verder helpen?", "request_id": request_id})
-        return jsonify({"response": "No problem! The ticket has been cancelled. How else can I help you?", "request_id": request_id})
-
-    # ---------------------------------------------------------
-    # STATE: AWAITING_NAME
+    # STATE: AWAITING_NAME (with flexible intent detection)
     # ---------------------------------------------------------
     if current_state == 'awaiting_name':
-        clean_name = rag_engine.extract_name(user_message)
-        state_data['name'] = clean_name
-        state_data['state'] = 'awaiting_email'
-        save_session_state(session_id, state_data)
+        # Use LLM to understand what the user actually wants
+        intent = rag_engine.detect_ticket_intent(user_message)
+        logger.debug("Ticket intent detected: %s", intent)
 
-        if user_lang == 'nl':
-            return jsonify({"response": f"Bedankt {clean_name}. Wat is je e-mailadres?", "request_id": request_id})
-        return jsonify({"response": f"Thanks {clean_name}. What is your email address?", "request_id": request_id})
+        if intent == 'declining':
+            # User doesn't want a ticket - cancel and return to chat
+            state_data = {'state': 'inactive', 'chat_history': chat_history}
+            save_session_state(session_id, state_data)
+
+            if user_lang == 'nl':
+                return jsonify({"response": "Geen probleem! 👍 Waarmee kan ik je verder helpen?", "request_id": request_id})
+            return jsonify({"response": "No problem! 👍 How else can I help you?", "request_id": request_id})
+
+        elif intent == 'new_question':
+            # User is asking something else - cancel ticket flow and process as RAG
+            state_data = {'state': 'inactive', 'chat_history': chat_history}
+            save_session_state(session_id, state_data)
+            # Fall through to RAG processing below (don't return here)
+
+        else:  # 'giving_name'
+            # User provided their name - extract and continue
+            clean_name = rag_engine.extract_name(user_message)
+            state_data['name'] = clean_name
+            state_data['state'] = 'awaiting_email'
+            save_session_state(session_id, state_data)
+
+            if user_lang == 'nl':
+                return jsonify({"response": f"Leuk je te ontmoeten, {clean_name}! 👋 Wat is je e-mailadres?", "request_id": request_id})
+            return jsonify({"response": f"Nice to meet you, {clean_name}! 👋 What's your email address?", "request_id": request_id})
 
     # ---------------------------------------------------------
-    # STATE: AWAITING_EMAIL
+    # STATE: AWAITING_EMAIL (with decline detection)
     # ---------------------------------------------------------
     if current_state == 'awaiting_email':
         email = user_message.strip()
-        if not is_valid_email(email):
-            if user_lang == 'nl':
-                return jsonify({"response": "Dat lijkt geen geldig e-mailadres. Probeer het opnieuw.", "request_id": request_id})
-            return jsonify({"response": "That doesn't look like a valid email. Please try again.", "request_id": request_id})
-            
-        state_data['email'] = email
-        name = state_data.get('name', 'Unknown')
-        original_q = state_data.get('question', '')
-        
-        # Create Ticket (pass chat history for context)
-        result = zendesk.create_ticket(name, email, original_q, chat_history)
 
-        # Reset State but preserve chat history
-        state_data = {
-            'state': 'inactive',
-            'chat_history': chat_history
-        }
-        save_session_state(session_id, state_data)
-        
-        if result:
-            ticket_id = result.get('ticket', {}).get('id', '???')
-            if user_lang == 'nl':
-                return jsonify({"response": f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op.", "request_id": request_id})
+        # If it's not a valid email, check if user is declining
+        if not is_valid_email(email):
+            intent = rag_engine.detect_ticket_intent(user_message)
+            logger.debug("Email state - intent detected: %s", intent)
+
+            if intent == 'declining':
+                # User changed their mind - cancel ticket
+                state_data = {'state': 'inactive', 'chat_history': chat_history}
+                save_session_state(session_id, state_data)
+
+                if user_lang == 'nl':
+                    return jsonify({"response": "Geen probleem! 👍 Waarmee kan ik je verder helpen?", "request_id": request_id})
+                return jsonify({"response": "No problem! 👍 How else can I help you?", "request_id": request_id})
+
+            elif intent == 'new_question':
+                # User asking something else - cancel and process as RAG
+                state_data = {'state': 'inactive', 'chat_history': chat_history}
+                save_session_state(session_id, state_data)
+                # Fall through to RAG processing below
+
             else:
-                return jsonify({"response": f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly.", "request_id": request_id})
+                # Genuinely invalid email - ask again
+                if user_lang == 'nl':
+                    return jsonify({"response": "Hmm, dat lijkt niet helemaal te kloppen 🤔 Kun je je e-mailadres nog een keer checken?", "request_id": request_id})
+                return jsonify({"response": "Hmm, that doesn't look quite right 🤔 Could you double-check your email address?", "request_id": request_id})
+
         else:
-            if user_lang == 'nl':
-                return jsonify({"response": "Sorry, er ging iets mis bij het aanmaken van het ticket. Bel ons alsjeblieft even.", "request_id": request_id})
+            # Valid email - proceed with ticket creation
+            state_data['email'] = email
+            name = state_data.get('name', 'Unknown')
+            original_q = state_data.get('question', '')
+
+            # Escalate (send email or create Zendesk ticket)
+            if ESCALATION_METHOD == "zendesk":
+                result = escalation_client.create_ticket(name, email, original_q, chat_history)
             else:
-                return jsonify({"response": "I'm sorry, something went wrong creating the ticket. Please call us directly.", "request_id": request_id})
+                result = escalation_client.send_email(name, email, original_q, chat_history)
+
+            # Reset State but preserve chat history
+            state_data = {
+                'state': 'inactive',
+                'chat_history': chat_history
+            }
+            save_session_state(session_id, state_data)
+
+            if result:
+                if ESCALATION_METHOD == "zendesk":
+                    ticket_id = result.get('ticket', {}).get('id', '???')
+                    if user_lang == 'nl':
+                        return jsonify({"response": f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op.", "request_id": request_id})
+                    else:
+                        return jsonify({"response": f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly.", "request_id": request_id})
+                else:
+                    if user_lang == 'nl':
+                        return jsonify({"response": "Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail.", "request_id": request_id})
+                    else:
+                        return jsonify({"response": "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible.", "request_id": request_id})
+            else:
+                if user_lang == 'nl':
+                    return jsonify({"response": "Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op.", "request_id": request_id})
+                else:
+                    return jsonify({"response": "I'm sorry, something went wrong sending your message. Please contact us directly.", "request_id": request_id})
 
 
     # Simple Intent Detection for Shipping
@@ -301,32 +473,40 @@ def chat() -> Response:
         response_text = get_shipment_status(order_id)
         return jsonify({"response": response_text, "request_id": request_id})
 
-    # Fallback to RAG (with conversation history for context)
-    logger.debug("Querying RAG for: %s", user_message)
-    response_text = rag_engine.get_answer(user_message, chat_history=chat_history)
+    # Feature 15: Detect language BEFORE RAG call so we can translate queries
+    detected_lang = rag_engine.detect_language(user_message)
+    state_data['language'] = detected_lang
 
-    # Check for Unknown Signal - offer to create support ticket
-    if "__UNKNOWN__" in response_text:
+    # Fallback to RAG (with conversation history for context)
+    logger.debug("Querying RAG for: %s (language: %s)", user_message, detected_lang)
+    response_text = rag_engine.get_answer(user_message, chat_history=chat_history, language=detected_lang)
+
+    # Check for Human Contact Request - user explicitly wants to speak with someone
+    if "__HUMAN_REQUESTED__" in response_text:
         state_data['state'] = 'awaiting_name'
         state_data['question'] = user_message
 
-        # Detect language using LLM (more reliable than word matching)
-        detected_lang = rag_engine.detect_language(user_message)
-        state_data['language'] = detected_lang
-
         if detected_lang == 'nl':
             response_text = (
-                "Ik kan het antwoord in mijn documentatie niet vinden. "
-                "Wil je dat ik een support ticket aanmaak? Zo ja, wat is je naam? "
-                "(Typ 'nee' of 'annuleren' om te stoppen)"
+                "Natuurlijk! Ik breng je graag in contact met een collega. "
+                "Wat is je naam?"
             )
         else:
             response_text = (
-                "I don't have the answer to that in my documentation. "
-                "Would you like me to create a support ticket? If so, what is your name? "
-                "(Type 'no' or 'cancel' to go back)"
+                "Of course! I'd be happy to connect you with a colleague. "
+                "What's your name?"
             )
 
+        save_session_state(session_id, state_data)
+
+    # Check for Unknown Signal - generate helpful response instead of immediate handoff
+    elif "__UNKNOWN__" in response_text:
+        # Generate a helpful response that doesn't immediately push to human handoff
+        response_text = rag_engine.generate_helpful_unknown_response(user_message, detected_lang)
+
+        # Stay in inactive state - user can ask for human help if they want
+        # The system prompt already tells the bot to respond with __HUMAN_REQUESTED__
+        # if the user explicitly asks for human contact
         save_session_state(session_id, state_data)
 
     # Update conversation history for context in future messages
@@ -336,18 +516,18 @@ def chat() -> Response:
     state_data['chat_history'] = chat_history[-10:]
     save_session_state(session_id, state_data)
 
-    # LOGGING: Save conversation to file
+    # LOGGING: Save conversation to file (with PII redaction)
     try:
         log_dir = "logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
-        
-        # Simple logging format with request ID for tracing
+
+        # Simple logging format with request ID for tracing (PII redacted)
         log_entry = {
             "timestamp": datetime.datetime.now().isoformat(),
             "request_id": request_id,
-            "user": user_message,
-            "bot": response_text
+            "user": _redact_pii_for_log(user_message),
+            "bot": _redact_pii_for_log(response_text)
         }
         
         # File per session (use sanitized ID for safety)
@@ -385,7 +565,8 @@ def ingest():
         logger.warning("ADMIN_API_KEY not configured - /api/ingest is disabled")
         return jsonify({"error": "Endpoint not configured"}), 503
 
-    if not provided_key or provided_key != admin_key:
+    # Use constant-time comparison to prevent timing attacks
+    if not provided_key or not secrets.compare_digest(provided_key, admin_key):
         logger.warning("Unauthorized /api/ingest attempt from %s", get_remote_address())
         return jsonify({"error": "Unauthorized"}), 401
 

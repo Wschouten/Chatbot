@@ -2,6 +2,7 @@
 .env
 *.env
 .env.*
+!.env.example
 
 # Python
 __pycache__/
@@ -45,6 +46,9 @@ htmlcov/
 
 # Claude Code
 .claude/
+
+# Gemini
+.agents/
 
 # Node (if any)
 node_modules/

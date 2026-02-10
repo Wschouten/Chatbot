@@ -1,0 +1,170 @@
+[
+  {
+    "question": "Wat is het verschil tussen Franse boomschors en dennenschors?",
+    "expected_answer_keywords": ["Franse boomschors", "grove", "dennenschors", "fijnere", "levensduur", "duurzamer"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoe dik moet ik houtsnippers leggen?",
+    "expected_answer_keywords": ["5 cm", "8", "10 cm", "laagdikte", "minimaal"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Welke kleuren houtsnippers zijn er?",
+    "expected_answer_keywords": ["natuurlijke", "lichtbruine", "blanco", "rood", "bruin", "gekleurde"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoeveel boomschors heb ik nodig voor 70 vierkante meter?",
+    "expected_answer_keywords": ["m³", "berekenen", "laagdikte", "formule", "oppervlakte"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Is schapenwol goed tegen slakken?",
+    "expected_answer_keywords": ["schapenwol", "slakken", "ruwe structuur", "schrikt af", "beschermen"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat zijn hydrokorrels en waarvoor gebruik je ze?",
+    "expected_answer_keywords": ["hydrokorrels", "drainage", "water", "potgrond", "bloempotten", "klei"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Welke soorten potgrond hebben jullie?",
+    "expected_answer_keywords": ["biologische", "universele", "moestuin", "RHP", "potgrond"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is het verschil tussen Ecolat en Ekoboard?",
+    "expected_answer_keywords": ["borderrand", "kunststof", "duurzaam", "afbakenen"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoe lang gaat Franse boomschors mee?",
+    "expected_answer_keywords": ["6", "8 jaar", "levensduur", "lange levensduur"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is de beste bodembedekking voor borders?",
+    "expected_answer_keywords": ["boomschors", "houtsnippers", "borders", "onkruid", "bodembedekking"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hebben jullie kortingscodes?",
+    "expected_answer_keywords": ["nee", "geen", "kortingscode", "scherp geprijsd"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wanneer wordt mijn bestelling geleverd?",
+    "expected_answer_keywords": ["1", "3 werkdagen", "5 werkdagen", "levertijd", "Nederland", "België"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Kan ik contant betalen?",
+    "expected_answer_keywords": ["nee", "webshop", "betaling", "uitsluitend"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Is jullie tuinaarde PFAS-vrij?",
+    "expected_answer_keywords": ["nee", "PFAS", "bemeste", "tuinaarde", "compost", "contaminatie"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Kan ik mijn bestelling retourneren?",
+    "expected_answer_keywords": ["ja", "retourneren", "klantenservice", "contact", "retourkosten"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Leveren jullie in het weekend?",
+    "expected_answer_keywords": ["nee", "weekend", "werkdagen", "uitsluitend"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Ik wil onkruid tegengaan in mijn border, wat raden jullie aan?",
+    "expected_answer_keywords": ["boomschors", "houtsnippers", "onkruid", "bodembedekking", "laag", "worteldoek"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Welke borderrand past bij mijn tuin?",
+    "expected_answer_keywords": ["Ecolat", "Ekoboard", "Recy-Edge", "borderrand", "kunststof"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is beter: boomschors of houtsnippers?",
+    "expected_answer_keywords": ["boomschors", "houtsnippers", "levensduur", "duurzamer", "verteren", "uitstraling"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoe bescherm ik mijn planten tegen vorst?",
+    "expected_answer_keywords": ["boomschors", "houtsnippers", "schapenwol", "isolerend", "vorst", "beschermt"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat heb ik nodig voor een speeltuin in mijn tuin?",
+    "expected_answer_keywords": ["houtsnippers", "boomschors", "valbrekend", "speelplaats", "laag"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Verkopen jullie ook meststoffen?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "Wat is de prijs van boomschors?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "Kunnen jullie mijn tuin ontwerpen?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "Hebben jullie ook plantenbakken?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "What types of bark mulch do you sell?",
+    "expected_answer_keywords": ["French", "pine", "bark", "types", "coarse", "fine"],
+    "category": "english",
+    "expect_unknown": false
+  },
+  {
+    "question": "How do I install border edging?",
+    "expected_answer_keywords": ["stakes", "posts", "50 cm", "install", "border"],
+    "category": "english",
+    "expect_unknown": false
+  },
+  {
+    "question": "What are hydrokorrels used for?",
+    "expected_answer_keywords": ["drainage", "water", "pots", "clay", "roots"],
+    "category": "english",
+    "expect_unknown": false
+  }
+]

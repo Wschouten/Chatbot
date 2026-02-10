@@ -6,6 +6,8 @@ from typing import Any, Optional
 
 import requests
 
+from brand_config import get_brand_config
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,11 @@ class ZendeskClient:
     def is_configured(self) -> bool:
         """Check if Zendesk credentials are configured."""
         return bool(self.subdomain and self.email and self.token)
+
+    @property
+    def use_mock(self) -> bool:
+        """Check if running in mock mode (credentials missing)."""
+        return not self.is_configured()
 
     def create_ticket(
         self,
@@ -61,15 +68,26 @@ class ZendeskClient:
             "Authorization": auth_header
         }
 
-        # Build Description
-        description = f"User Question: {question}\n\n"
+        # Build Description with full conversation history
+        brand = get_brand_config()
+        welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
+
+        description = f"Original Question: {question}\n\n"
+        description += "=" * 50 + "\n"
+        description += "COMPLETE CONVERSATION HISTORY\n"
+        description += "=" * 50 + "\n\n"
+
+        # Include the welcome message that starts every conversation
+        description += f"Bot: {welcome_msg}\n\n"
+
         if session_history:
-            description += "-- Chat History --\n"
-            for msg in session_history[-10:]:  # Last 10 messages context
+            for msg in session_history:
                 role = msg.get('role', 'unknown')
                 content = msg.get('content', '')
                 prefix = "Customer" if role == 'user' else "Bot"
-                description += f"{prefix}: {content}\n"
+                description += f"{prefix}: {content}\n\n"
+        else:
+            description += "(No further conversation history)\n"
 
         payload = {
             "ticket": {

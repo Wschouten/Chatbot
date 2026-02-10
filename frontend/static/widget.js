@@ -1,10 +1,10 @@
 /**
- * GroundCover Chatbot Widget - Embeddable Script
+ * GroundCoverGroup Chatbot Widget - Embeddable Script
  *
  * Usage on Shopify or any website:
  * <script src="https://your-domain.com/widget.js"
  *         data-api-url="https://your-domain.com"
- *         data-brand="Ecostyle"
+ *         data-brand="GroundCoverGroup"
  *         data-position="bottom-right"
  *         data-primary-color="#2C5E2E">
  * </script>
@@ -13,8 +13,8 @@
     'use strict';
 
     // Prevent multiple initializations
-    if (window.GroundCoverChatbot) return;
-    window.GroundCoverChatbot = { initialized: true };
+    if (window.GroundCoverGroupChatbot) return;
+    window.GroundCoverGroupChatbot = { initialized: true };
 
     // =============================================================================
     // Configuration from script tag data attributes
@@ -31,7 +31,7 @@
 
     // Validate API URL
     if (!CONFIG.apiUrl) {
-        console.error('GroundCover Chatbot: data-api-url is required');
+        console.error('GroundCoverGroup Chatbot: data-api-url is required');
         return;
     }
 
@@ -396,7 +396,7 @@
                     localStorage.setItem(SESSION_KEY, sessionId);
                 }
             } catch (error) {
-                console.error('GroundCover Chatbot: Failed to get session', error);
+                console.error('GroundCoverGroup Chatbot: Failed to get session', error);
                 sessionId = 'fallback_' + Date.now();
             }
         }

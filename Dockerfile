@@ -27,6 +27,8 @@ RUN chown -R appuser:appgroup /app && \
     mkdir -p /app/backend/sessions /app/backend/logs /app/backend/chroma_db && \
     chown -R appuser:appgroup /app/backend/sessions /app/backend/logs /app/backend/chroma_db
 
+RUN chmod 700 /app/backend/sessions /app/backend/logs
+
 # Set environment variable for Flask
 ENV FLASK_APP=backend/app.py
 ENV FLASK_RUN_HOST=0.0.0.0
@@ -47,8 +49,8 @@ WORKDIR /app/backend
 USER appuser
 
 # Health check
-HEALTHCHECK --interval=2m --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=2m --timeout=10s --start-period=5m --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
 
-# Run app.py when the container launches
-CMD ["python", "app.py"]
+# Run with gunicorn for production serving
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "app:app"]

@@ -26,12 +26,17 @@ class BrandConfig:
     # Support header text
     support_header: str
 
+    # Personality settings
+    personality_nl: str  # Dutch personality prompt
+    personality_en: str  # English personality prompt
+    use_emojis: bool  # Whether to use emojis in responses
+
     @classmethod
     def from_env(cls) -> "BrandConfig":
         """Load brand configuration from environment variables."""
         name = os.environ.get("BRAND_NAME", "GroundCoverGroup")
-        product_line = os.environ.get("BRAND_PRODUCT_LINE", "Ecostyle")
-        assistant_name = os.environ.get("BRAND_ASSISTANT_NAME", "GroundCover")
+        product_line = os.environ.get("BRAND_PRODUCT_LINE", "GroundCoverGroup")
+        assistant_name = os.environ.get("BRAND_ASSISTANT_NAME", "GroundCoverGroup")
 
         # Default relevant topics
         default_topics = f"tuinieren, {product_line}, {name}, producten, gardening, products"
@@ -46,6 +51,24 @@ class BrandConfig:
 
         support_header = os.environ.get("BRAND_SUPPORT_HEADER", f"{assistant_name} Support")
 
+        # Default personality prompts - friendly customer service representative
+        default_personality_nl = (
+            "Je bent een vriendelijke, informele klantenservice-medewerker van [BRAND_NAME]. "
+            "Je beantwoordt vragen over onze producten en diensten alsof je een deskundige collega in de winkel bent: warm, professioneel, kort en helder. "
+            "Je spreekt altijd namens wij / ons en controleert zorgvuldig voordat je antwoordt. "
+            "Als je iets niet zeker weet, ben je daar eerlijk over en bied je aan dat een collega kan helpen."
+        )
+        default_personality_en = (
+            "You are a friendly, informal customer service representative for [BRAND_NAME]."
+            "You answer questions about our products and services as if you were an expert colleague in the shop: warm, professional, concise and clear. "
+            "You always speak on behalf of us and check carefully before answering."
+            "If you are unsure about something, you are honest about it and offer to have a colleague assist."
+        )
+
+        personality_nl = os.environ.get("BRAND_PERSONALITY_NL", default_personality_nl)
+        personality_en = os.environ.get("BRAND_PERSONALITY_EN", default_personality_en)
+        use_emojis = os.environ.get("BRAND_USE_EMOJIS", "true").lower() == "true"
+
         return cls(
             name=name,
             product_line=product_line,
@@ -54,6 +77,9 @@ class BrandConfig:
             welcome_message_nl=welcome_nl,
             welcome_message_en=welcome_en,
             support_header=support_header,
+            personality_nl=personality_nl,
+            personality_en=personality_en,
+            use_emojis=use_emojis,
         )
 
 
