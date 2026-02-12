@@ -20,6 +20,9 @@ from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
+from pathlib import Path
+from flask import Flask
+
 
 # Load environment variables
 load_dotenv()
@@ -56,7 +59,15 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, template_folder="../frontend/templates", static_folder="../frontend/static")
+BASE_DIR = Path(__file__).resolve().parent  # .../backend
+FRONTEND_DIR = BASE_DIR.parent / "frontend"
+
+app = Flask(
+    __name__,
+    template_folder=str(FRONTEND_DIR / "templates"),
+    static_folder=str(FRONTEND_DIR / "static"),
+)
+
 
 # =============================================================================
 # SECURITY: CORS Configuration
@@ -106,19 +117,32 @@ def add_security_headers(response: Response) -> Response:
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     # Permissions policy (disable unused features)
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-    # Content Security Policy - allow framing from allowed origins
-    response.headers['Content-Security-Policy'] = (
-        "default-src 'self'; "
-        "script-src 'self'; "
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-        "font-src 'self' https://fonts.gstatic.com; "
-        "img-src 'self' data:; "
-        "connect-src 'self' " + ' '.join(ALLOWED_ORIGINS) + "; "
-        f"frame-ancestors 'self' {frame_ancestors}"
-    )
+    # Content Security Policy - admin pages need relaxed rules for inline
+    # scripts and blob: URLs (for JSON export downloads)
+    is_admin = request.path.startswith('/admin')
+    if is_admin:
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self' blob:; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self' " + ' '.join(ALLOWED_ORIGINS) + "; "
+            f"frame-ancestors 'self' {frame_ancestors}"
+        )
+    else:
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "img-src 'self' data:; "
+            "connect-src 'self' " + ' '.join(ALLOWED_ORIGINS) + "; "
+            f"frame-ancestors 'self' {frame_ancestors}"
+        )
 
-    # Cache-Control headers for API routes
-    if request.path.startswith('/api/'):
+    # Cache-Control headers for API routes (including admin API)
+    if request.path.startswith('/api/') or request.path.startswith('/admin/api/'):
         response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
         response.headers['Pragma'] = 'no-cache'
 
@@ -224,27 +248,23 @@ def health():
         health_status["status"] = "unhealthy"
         status_code = 503
 
-    # Check OpenAI client initialization
-    try:
-        if hasattr(rag_engine, 'client') and rag_engine.client:
-            health_status["dependencies"]["openai"] = {
-                "status": "healthy",
-                "message": "Client initialized"
-            }
-        else:
-            health_status["dependencies"]["openai"] = {
-                "status": "unhealthy",
-                "message": "Client not initialized"
-            }
-            health_status["status"] = "unhealthy"
-            status_code = 503
-    except Exception as e:
-        health_status["dependencies"]["openai"] = {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+# Check OpenAI client initialization
+try:
+    openai_health = rag_engine.get_openai_health()
+
+    health_status["dependencies"]["openai"] = openai_health
+
+    if openai_health.get("status") != "healthy":
         health_status["status"] = "unhealthy"
         status_code = 503
+except Exception as e:
+    health_status["dependencies"]["openai"] = {
+        "status": "unhealthy",
+        "error": str(e),
+    }
+    health_status["status"] = "unhealthy"
+    status_code = 503
+
 
     # Check escalation method configuration
     try:
@@ -439,10 +459,10 @@ def chat() -> Response:
             else:
                 result = escalation_client.send_email(name, email, original_q, chat_history)
 
-            # Reset State but preserve chat history
+            # Reset State and clear history after escalation
             state_data = {
                 'state': 'inactive',
-                'chat_history': chat_history
+                'chat_history': []
             }
             save_session_state(session_id, state_data)
 
@@ -573,6 +593,78 @@ def ingest():
     result = rag_engine.ingest_documents()
     logger.info("Document re-ingestion triggered successfully")
     return jsonify({"status": result})
+
+
+# =============================================================================
+# ADMIN: Chat Log Portal
+# =============================================================================
+@app.route('/admin')
+def admin_portal():
+    """Serve the admin chat-log portal page."""
+    return render_template('portal.html')
+
+
+@app.route('/portal/<path:filename>')
+def serve_portal_static(filename):
+    """Serve portal static files (JS, etc.) from the portal/ directory."""
+    return send_from_directory(
+        os.path.join(os.path.dirname(__file__), '..', 'portal'),
+        filename
+    )
+
+
+@app.route('/admin/api/conversations', methods=['GET'])
+@limiter.limit("30 per minute")
+def admin_conversations():
+    """Return all chat log files for the admin portal (requires ADMIN_API_KEY)."""
+    admin_key = os.environ.get('ADMIN_API_KEY')
+    provided_key = request.headers.get('X-Admin-Key')
+
+    if not admin_key:
+        logger.warning("ADMIN_API_KEY not configured - admin API is disabled")
+        return jsonify({"error": "Endpoint not configured"}), 503
+
+    if not provided_key or not secrets.compare_digest(provided_key, admin_key):
+        logger.warning("Unauthorized /admin/api/conversations attempt from %s", get_remote_address())
+        return jsonify({"error": "Unauthorized"}), 401
+
+    log_dir = "logs"
+    conversations = []
+
+    if not os.path.isdir(log_dir):
+        return jsonify({"conversations": []})
+
+    for filename in os.listdir(log_dir):
+        if not filename.startswith("chat_") or not filename.endswith(".json"):
+            continue
+        filepath = os.path.join(log_dir, filename)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                entries = json.load(f)
+            if not entries:
+                continue
+            # Derive session id from filename: chat_<session_id>.json
+            session_id = filename[len("chat_"):-len(".json")]
+            conversations.append({
+                "id": session_id,
+                "started": entries[0].get("timestamp", ""),
+                "lastMessage": entries[-1].get("timestamp", ""),
+                "messageCount": len(entries),
+                "messages": [
+                    {
+                        "timestamp": e.get("timestamp", ""),
+                        "user": e.get("user", ""),
+                        "bot": e.get("bot", "")
+                    }
+                    for e in entries
+                ]
+            })
+        except (json.JSONDecodeError, IOError, KeyError) as e:
+            logger.warning("Skipping corrupt log file %s: %s", filename, e)
+
+    # Sort newest-first by last message timestamp
+    conversations.sort(key=lambda c: c.get("lastMessage", ""), reverse=True)
+    return jsonify({"conversations": conversations})
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'

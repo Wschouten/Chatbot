@@ -1,11 +1,71 @@
 """RAG Engine for configurable brand Chatbot."""
+
+from __future__ import annotations  # MUST be first
+
 import glob
 import logging
 import os
+import time
 from typing import Any, Optional
 
-from openai import OpenAI
 from brand_config import get_brand_config
+
+logger = logging.getLogger(__name__)
+
+# -----------------------------
+# OpenAI Client State
+# -----------------------------
+_openai_client = None
+_openai_init_error: Optional[str] = None
+
+
+# -----------------------------
+# OpenAI Client Management
+# -----------------------------
+def get_openai_client():
+    """
+    Lazy-initialize and return a cached OpenAI client.
+    This ensures all parts of the app (including /health) see the same state.
+    """
+    global _openai_client, _openai_init_error
+
+    if _openai_client is not None:
+        return _openai_client
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        _openai_init_error = "OPENAI_API_KEY is missing"
+        logger.error(_openai_init_error)
+        return None
+
+    try:
+        from openai import OpenAI  # imported lazily
+
+        _openai_client = OpenAI(api_key=api_key)
+        _openai_init_error = None
+        logger.info("OpenAI Client Initialized Successfully.")
+        return _openai_client
+    except Exception as exc:
+        _openai_client = None
+        _openai_init_error = f"{type(exc).__name__}: {exc}"
+        logger.exception("OpenAI client initialization failed.")
+        return None
+
+
+def get_openai_health() -> dict:
+    """
+    Returns a health payload without exposing secrets.
+    """
+    client = get_openai_client()
+    if client is None:
+        return {
+            "status": "unhealthy",
+            "message": _openai_init_error or "Client not initialized",
+        }
+
+    return {"status": "healthy"}
+
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -15,7 +75,7 @@ try:
     import chromadb
     from pypdf import PdfReader
     RAG_DEPENDENCIES_LOADED = True
-except ImportError as e:
+except Exception as e:
     logger.warning("RAG Libraries (ChromaDB/PyPDF) incompatible or missing: %s", e)
     RAG_DEPENDENCIES_LOADED = False
     chromadb = None  # type: ignore
@@ -53,16 +113,24 @@ class RagEngine:
             logger.error("OpenAI Initialization Error: %s", e)
 
         # Initialize ChromaDB (Only if dependencies loaded)
+        # Retry once after a short delay to handle gunicorn worker race conditions
+        # where multiple workers compete for SQLite migration locks
         if RAG_DEPENDENCIES_LOADED and chromadb:
-            try:
-                self.chroma_client = chromadb.PersistentClient(path=self.persist_directory)
-                self.collection = self.chroma_client.get_or_create_collection(
-                    name=self.collection_name
-                )
-                logger.info("Knowledge Base Initialized.")
-            except Exception as e:
-                logger.error("ChromaDB Initialization Error: %s", e)
-                self.collection = None
+            for attempt in range(2):
+                try:
+                    self.chroma_client = chromadb.PersistentClient(path=self.persist_directory)
+                    self.collection = self.chroma_client.get_or_create_collection(
+                        name=self.collection_name
+                    )
+                    logger.info("Knowledge Base Initialized.")
+                    break
+                except Exception as e:
+                    if attempt == 0:
+                        logger.warning("ChromaDB init failed (attempt 1), retrying: %s", e)
+                        time.sleep(2)
+                    else:
+                        logger.error("ChromaDB Initialization Error: %s", e)
+                        self.collection = None
         else:
             logger.warning("Running without Knowledge Base (Memory).")
 
@@ -75,6 +143,58 @@ class RagEngine:
             model=self.embedding_model
         )
         return response.data[0].embedding
+
+    def _reformulate_query(
+        self,
+        query: str,
+        chat_history: list[dict[str, str]]
+    ) -> str:
+        """Reformulate a follow-up question into a standalone query using conversation context."""
+        if not self.openai_client:
+            return query
+
+        try:
+            recent = chat_history[-4:]
+            history_text = "\n".join(
+                f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:200]}"
+                for m in recent
+            )
+
+            response = self.openai_client.chat.completions.create(
+                model=self.chat_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You rewrite follow-up questions into standalone questions. "
+                            "Use the conversation history to resolve pronouns, references, "
+                            "and implicit subjects. Keep the language of the user's question "
+                            "(Dutch stays Dutch, English stays English). "
+                            "If the question is already standalone, return it unchanged. "
+                            "Output ONLY the rewritten question, nothing else."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Conversation history:\n{history_text}\n\n"
+                            f"Follow-up question: {query}\n\n"
+                            "Rewritten standalone question:"
+                        )
+                    }
+                ],
+                temperature=0.1,
+                max_completion_tokens=100
+            )
+            result = response.choices[0].message.content
+            if result:
+                reformulated = result.strip()
+                logger.debug("Query reformulated: '%s' -> '%s'", query, reformulated)
+                return reformulated
+            return query
+        except Exception as e:
+            logger.warning("Query reformulation failed, using original: %s", e)
+            return query
 
     def _extract_metadata_from_content(self, content: str, filename: str) -> dict[str, str]:
         """Extract metadata from document content.
@@ -338,6 +458,11 @@ class RagEngine:
             try:
                 # Feature 15: Translate English queries to Dutch for better KB matching
                 search_query = query
+
+                # Feature 25: Reformulate follow-up questions into standalone queries
+                if chat_history:
+                    search_query = self._reformulate_query(query, chat_history)
+
                 if language == 'en':
                     try:
                         translation = self.openai_client.chat.completions.create(
