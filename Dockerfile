@@ -49,8 +49,9 @@ WORKDIR /app/backend
 USER appuser
 
 # Health check
-HEALTHCHECK --interval=2m --timeout=10s --start-period=5m --retries=3 \
+HEALTHCHECK --interval=2m --timeout=10s --start-period=2m --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
 
 # Run with gunicorn for production serving
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "app:app"]
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT} --workers 1 --timeout 120 --access-logfile - app:app"]
+
