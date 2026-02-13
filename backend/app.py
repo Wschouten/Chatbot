@@ -14,14 +14,13 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from rag_engine import RagEngine
+from rag_engine import RagEngine, get_openai_health
 from shipping_api import get_shipment_status
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
 from pathlib import Path
-from flask import Flask
 
 
 # Load environment variables
@@ -248,23 +247,23 @@ def health():
         health_status["status"] = "unhealthy"
         status_code = 503
 
-# Check OpenAI client initialization
-try:
-    openai_health = rag_engine.get_openai_health()
+    # Check OpenAI client initialization
+    try:
+        openai_health = get_openai_health()
 
-    health_status["dependencies"]["openai"] = openai_health
+        health_status["dependencies"]["openai"] = openai_health
 
-    if openai_health.get("status") != "healthy":
+        if openai_health.get("status") != "healthy":
+            health_status["status"] = "unhealthy"
+            status_code = 503
+
+    except Exception as e:
+        health_status["dependencies"]["openai"] = {
+            "status": "unhealthy",
+            "error": str(e),
+        }
         health_status["status"] = "unhealthy"
         status_code = 503
-except Exception as e:
-    health_status["dependencies"]["openai"] = {
-        "status": "unhealthy",
-        "error": str(e),
-    }
-    health_status["status"] = "unhealthy"
-    status_code = 503
-
 
     # Check escalation method configuration
     try:
@@ -279,6 +278,7 @@ except Exception as e:
                 "status": "configured",
                 "message": f"{escalation_key.title()} client configured"
             }
+
     except Exception as e:
         health_status["dependencies"]["escalation"] = {
             "status": "error",
@@ -286,7 +286,6 @@ except Exception as e:
         }
 
     return jsonify(health_status), status_code
-
 
 @app.route('/api/session', methods=['POST'])
 @limiter.limit("10 per minute")
