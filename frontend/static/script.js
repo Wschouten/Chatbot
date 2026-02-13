@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const consent = localStorage.getItem(CONSENT_KEY);
         if (consent === 'accepted') {
             hasConsent = true;
-            sessionId = localStorage.getItem(SESSION_KEY);
+            sessionId = sessionStorage.getItem(SESSION_KEY);
             hideConsentOverlay();
             // If no session ID, fetch a new one
             if (!sessionId) {
@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.session_id) {
                 sessionId = data.session_id;
-                localStorage.setItem(SESSION_KEY, sessionId);
+                sessionStorage.setItem(SESSION_KEY, sessionId);
             }
         } catch (error) {
             console.error('Failed to fetch session ID:', error);

@@ -3,7 +3,7 @@
 **Track:** Infrastructure
 **Effort:** 30-60 min
 **Status:** Todo
-**Dependencies:** Feature 19 (Production Baseline Commit — code must be pushed to GitHub)
+**Dependencies:** Feature 27 (Production env vars prepared), Feature 28 (Local Docker smoke test passes)
 
 ## Context
 

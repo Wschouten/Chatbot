@@ -1,0 +1,2176 @@
+/* =============================================================================
+   Chat Log Portal - Admin Dashboard Stylesheet
+   GroundCoverGroup Chatbot
+   =============================================================================
+   Table of Contents:
+   1. CSS Variables & Theme
+   2. Reset & Base Styles
+   3. Scrollbar Styling
+   4. Keyframe Animations
+   5. Login Screen
+   6. Portal Layout (Header, Sidebar, Main)
+   7. Dashboard View
+   8. Conversation List Panel
+   9. Conversation Detail Panel
+  10. Message Thread
+  11. Labels & Rating Panel
+  12. Export Modal
+  13. Buttons
+  14. Badges & Chips
+  15. Utility Classes (Empty State, Spinner, Toast)
+  16. Responsive Breakpoints
+   ============================================================================= */
+
+
+/* =============================================================================
+   1. CSS Variables & Theme
+   ============================================================================= */
+
+:root {
+    --portal-primary: #2C5E2E;
+    --portal-primary-hover: #1e4220;
+    --portal-primary-light: #F1F8F1;
+    --portal-bg: #f5f6fa;
+    --portal-surface: #ffffff;
+    --portal-text: #333333;
+    --portal-text-secondary: #666666;
+    --portal-text-muted: #999999;
+    --portal-border: #e2e8f0;
+    --portal-danger: #dc3545;
+    --portal-warning: #f59e0b;
+    --portal-info: #3b82f6;
+    --portal-success: #10b981;
+    --portal-radius: 8px;
+    --portal-radius-lg: 12px;
+    --portal-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --portal-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.12);
+    --portal-sidebar-width: 240px;
+    --portal-header-height: 56px;
+    --portal-transition: 0.2s ease;
+}
+
+/* -- Dark Mode ------------------------------------------------------------ */
+
+[data-theme="dark"] {
+    --portal-bg: #0f172a;
+    --portal-surface: #1e293b;
+    --portal-text: #e2e8f0;
+    --portal-text-secondary: #94a3b8;
+    --portal-text-muted: #64748b;
+    --portal-border: #334155;
+    --portal-primary-light: #1a3a1c;
+    --portal-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --portal-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="dark"] .login-card,
+[data-theme="dark"] .modal {
+    background-color: var(--portal-surface);
+    color: var(--portal-text);
+}
+
+[data-theme="dark"] .portal-header {
+    background-color: var(--portal-surface);
+    border-bottom-color: var(--portal-border);
+}
+
+[data-theme="dark"] .portal-sidebar {
+    background-color: var(--portal-surface);
+    border-right-color: var(--portal-border);
+}
+
+[data-theme="dark"] input,
+[data-theme="dark"] textarea,
+[data-theme="dark"] select {
+    background-color: #0f172a;
+    border-color: var(--portal-border);
+    color: var(--portal-text);
+}
+
+[data-theme="dark"] input::placeholder,
+[data-theme="dark"] textarea::placeholder {
+    color: var(--portal-text-muted);
+}
+
+[data-theme="dark"] .stat-card {
+    background-color: var(--portal-surface);
+}
+
+[data-theme="dark"] .conversation-item:hover {
+    background-color: var(--portal-primary-light);
+}
+
+[data-theme="dark"] .conversation-item.active {
+    background-color: var(--portal-primary-light);
+}
+
+[data-theme="dark"] .message-bot {
+    background-color: #334155;
+    color: var(--portal-text);
+}
+
+[data-theme="dark"] .filter-chip {
+    background-color: #334155;
+    color: var(--portal-text-secondary);
+    border-color: var(--portal-border);
+}
+
+[data-theme="dark"] .filter-chip.active {
+    background-color: var(--portal-primary);
+    color: #ffffff;
+}
+
+
+/* =============================================================================
+   2. Reset & Base Styles
+   ============================================================================= */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body.portal-body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--portal-text);
+    background-color: var(--portal-bg);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+    color: var(--portal-primary);
+    text-decoration: none;
+    transition: color var(--portal-transition);
+}
+
+a:hover {
+    color: var(--portal-primary-hover);
+    text-decoration: underline;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--portal-text);
+}
+
+input,
+textarea,
+select,
+button {
+    font-family: inherit;
+    font-size: inherit;
+}
+
+
+/* =============================================================================
+   3. Scrollbar Styling
+   ============================================================================= */
+
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--portal-border);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--portal-text-muted);
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--portal-border) transparent;
+}
+
+
+/* =============================================================================
+   4. Keyframe Animations
+   ============================================================================= */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes toastOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(100%);
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+
+/* =============================================================================
+   5. Login Screen
+   ============================================================================= */
+
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--portal-bg);
+    z-index: 9999;
+    animation: fadeIn 0.3s ease;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    margin: 0 16px;
+    padding: 40px;
+    background-color: var(--portal-surface);
+    border-radius: var(--portal-radius-lg);
+    box-shadow: var(--portal-shadow-lg);
+}
+
+.login-logo {
+    text-align: center;
+    margin-bottom: 32px;
+}
+
+.login-logo h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--portal-primary);
+    margin-bottom: 4px;
+}
+
+.login-logo p {
+    font-size: 13px;
+    color: var(--portal-text-muted);
+}
+
+.login-field {
+    margin-bottom: 20px;
+}
+
+.login-field label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--portal-text-secondary);
+    margin-bottom: 6px;
+}
+
+.login-field input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    background-color: var(--portal-surface);
+    color: var(--portal-text);
+    outline: none;
+    transition: border-color var(--portal-transition), box-shadow var(--portal-transition);
+}
+
+.login-field input:focus {
+    border-color: var(--portal-primary);
+    box-shadow: 0 0 0 3px rgba(44, 94, 46, 0.12);
+}
+
+.login-field input::placeholder {
+    color: var(--portal-text-muted);
+}
+
+.login-error {
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    background-color: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: var(--portal-radius);
+    color: var(--portal-danger);
+    font-size: 13px;
+    display: none;
+}
+
+.login-error.visible {
+    display: block;
+    animation: fadeIn 0.2s ease;
+}
+
+[data-theme="dark"] .login-error {
+    background-color: #3b1c1c;
+    border-color: #5c2626;
+}
+
+.login-card .btn-primary {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+
+/* =============================================================================
+   6. Portal Layout (Header, Sidebar, Main)
+   ============================================================================= */
+
+/* -- Header --------------------------------------------------------------- */
+
+.portal-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--portal-header-height);
+    background-color: var(--portal-surface);
+    border-bottom: 1px solid var(--portal-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    z-index: 100;
+    box-shadow: var(--portal-shadow);
+}
+
+.portal-header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.portal-header-left h1 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--portal-primary);
+    white-space: nowrap;
+}
+
+.portal-header-left .header-icon {
+    font-size: 20px;
+    line-height: 1;
+}
+
+.sidebar-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--portal-text);
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--portal-radius);
+    transition: background-color var(--portal-transition);
+}
+
+.sidebar-toggle:hover {
+    background-color: var(--portal-primary-light);
+}
+
+.portal-header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.dark-mode-toggle {
+    background: none;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    color: var(--portal-text);
+    transition: background-color var(--portal-transition), border-color var(--portal-transition);
+}
+
+.dark-mode-toggle:hover {
+    background-color: var(--portal-primary-light);
+    border-color: var(--portal-primary);
+}
+
+.header-user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--portal-text-secondary);
+}
+
+.header-user-info .user-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: var(--portal-primary);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.header-logout-btn {
+    background: none;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    padding: 6px 14px;
+    font-size: 13px;
+    color: var(--portal-text-secondary);
+    cursor: pointer;
+    transition: all var(--portal-transition);
+}
+
+.header-logout-btn:hover {
+    border-color: var(--portal-danger);
+    color: var(--portal-danger);
+    background-color: #fef2f2;
+}
+
+[data-theme="dark"] .header-logout-btn:hover {
+    background-color: #3b1c1c;
+}
+
+/* -- Sidebar -------------------------------------------------------------- */
+
+.portal-sidebar {
+    position: fixed;
+    top: var(--portal-header-height);
+    left: 0;
+    bottom: 0;
+    width: var(--portal-sidebar-width);
+    background-color: var(--portal-surface);
+    border-right: 1px solid var(--portal-border);
+    display: flex;
+    flex-direction: column;
+    z-index: 90;
+    overflow-y: auto;
+    transition: transform 0.3s ease;
+}
+
+.sidebar-nav {
+    flex: 1;
+    padding: 12px 0;
+}
+
+.sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 20px;
+    color: var(--portal-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--portal-transition);
+    border-left: 3px solid transparent;
+    text-decoration: none;
+}
+
+.sidebar-nav-item:hover {
+    background-color: var(--portal-primary-light);
+    color: var(--portal-text);
+    text-decoration: none;
+}
+
+.sidebar-nav-item.active {
+    background-color: var(--portal-primary-light);
+    color: var(--portal-primary);
+    font-weight: 600;
+    border-left-color: var(--portal-primary);
+}
+
+.sidebar-nav-item .nav-icon {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid var(--portal-border);
+    font-size: 11px;
+    color: var(--portal-text-muted);
+}
+
+/* -- Sidebar Backdrop (mobile only) --------------------------------------- */
+
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    z-index: 80;
+}
+
+.sidebar-backdrop.visible {
+    display: block;
+}
+
+/* -- Main Content --------------------------------------------------------- */
+
+.portal-main {
+    margin-left: var(--portal-sidebar-width);
+    margin-top: var(--portal-header-height);
+    padding: 24px;
+    min-height: calc(100vh - var(--portal-header-height));
+    animation: fadeIn 0.3s ease;
+}
+
+.portal-view {
+    display: none;
+}
+
+.portal-view.active {
+    display: block;
+    animation: fadeIn 0.25s ease;
+}
+
+.view-header {
+    margin-bottom: 24px;
+}
+
+.view-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.view-header p {
+    font-size: 13px;
+    color: var(--portal-text-muted);
+}
+
+
+/* =============================================================================
+   7. Dashboard View
+   ============================================================================= */
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+.stat-card {
+    background-color: var(--portal-surface);
+    border-radius: var(--portal-radius-lg);
+    padding: 20px;
+    box-shadow: var(--portal-shadow);
+    border-top: 4px solid var(--portal-border);
+    transition: box-shadow var(--portal-transition), transform var(--portal-transition);
+}
+
+.stat-card:hover {
+    box-shadow: var(--portal-shadow-lg);
+    transform: translateY(-2px);
+}
+
+.stat-card.stat-primary {
+    border-top-color: var(--portal-primary);
+}
+
+.stat-card.stat-info {
+    border-top-color: var(--portal-info);
+}
+
+.stat-card.stat-warning {
+    border-top-color: var(--portal-warning);
+}
+
+.stat-card.stat-danger {
+    border-top-color: var(--portal-danger);
+}
+
+.stat-card.stat-success {
+    border-top-color: var(--portal-success);
+}
+
+.stat-card-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--portal-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+.stat-card-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--portal-text);
+    line-height: 1.2;
+}
+
+.stat-card-subtitle {
+    font-size: 12px;
+    color: var(--portal-text-muted);
+    margin-top: 6px;
+}
+
+.stat-card-trend {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-top: 6px;
+}
+
+.stat-card-trend.up {
+    color: var(--portal-success);
+}
+
+.stat-card-trend.down {
+    color: var(--portal-danger);
+}
+
+/* -- Chart Placeholder ---------------------------------------------------- */
+
+.dashboard-chart-area {
+    background-color: var(--portal-surface);
+    border-radius: var(--portal-radius-lg);
+    padding: 24px;
+    box-shadow: var(--portal-shadow);
+    min-height: 300px;
+}
+
+.dashboard-chart-area h3 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.chart-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 240px;
+    border: 2px dashed var(--portal-border);
+    border-radius: var(--portal-radius);
+    color: var(--portal-text-muted);
+    font-size: 13px;
+}
+
+
+/* =============================================================================
+   8. Conversation List Panel
+   ============================================================================= */
+
+.conversations-container {
+    display: flex;
+    gap: 0;
+    height: calc(100vh - var(--portal-header-height) - 48px - 64px);
+    min-height: 500px;
+    background-color: var(--portal-surface);
+    border-radius: var(--portal-radius-lg);
+    box-shadow: var(--portal-shadow);
+    overflow: hidden;
+}
+
+.conversation-list-panel {
+    width: 380px;
+    min-width: 380px;
+    border-right: 1px solid var(--portal-border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* -- Search Bar ----------------------------------------------------------- */
+
+.conversation-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--portal-border);
+}
+
+.search-input-wrapper {
+    position: relative;
+}
+
+.search-input-wrapper::before {
+    content: "\1F50D";
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+.search-input-wrapper input {
+    width: 100%;
+    padding: 8px 12px 8px 36px;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    background-color: var(--portal-bg);
+    color: var(--portal-text);
+    outline: none;
+    transition: border-color var(--portal-transition), box-shadow var(--portal-transition);
+}
+
+.search-input-wrapper input:focus {
+    border-color: var(--portal-primary);
+    box-shadow: 0 0 0 3px rgba(44, 94, 46, 0.1);
+}
+
+.search-input-wrapper input::placeholder {
+    color: var(--portal-text-muted);
+}
+
+/* -- Filter Chips --------------------------------------------------------- */
+
+.conversation-filters {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--portal-border);
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: 1px solid var(--portal-border);
+    border-radius: 20px;
+    background-color: var(--portal-surface);
+    color: var(--portal-text-secondary);
+    cursor: pointer;
+    transition: all var(--portal-transition);
+    white-space: nowrap;
+    user-select: none;
+}
+
+.filter-chip:hover {
+    border-color: var(--portal-primary);
+    color: var(--portal-primary);
+}
+
+.filter-chip.active {
+    background-color: var(--portal-primary);
+    border-color: var(--portal-primary);
+    color: #ffffff;
+}
+
+.filter-chip .chip-count {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 10px;
+    padding: 0 5px;
+    font-size: 11px;
+    min-width: 18px;
+    text-align: center;
+}
+
+.filter-chip.active .chip-count {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* -- Conversation List ---------------------------------------------------- */
+
+.conversation-list {
+    flex: 1;
+    overflow-y: auto;
+}
+
+.conversation-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--portal-border);
+    cursor: pointer;
+    transition: background-color var(--portal-transition);
+    border-left: 3px solid transparent;
+}
+
+.conversation-item:hover {
+    background-color: var(--portal-primary-light);
+}
+
+.conversation-item.active {
+    background-color: var(--portal-primary-light);
+    border-left-color: var(--portal-primary);
+}
+
+.conversation-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.conversation-item-id {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--portal-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.conversation-item-date {
+    font-size: 11px;
+    color: var(--portal-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.conversation-item-preview {
+    font-size: 12px;
+    color: var(--portal-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+}
+
+.conversation-item-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.conversation-item-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-indicator.status-active {
+    background-color: var(--portal-success);
+}
+
+.status-indicator.status-closed {
+    background-color: var(--portal-text-muted);
+}
+
+.status-indicator.status-flagged {
+    background-color: var(--portal-warning);
+}
+
+.message-count-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 11px;
+    color: var(--portal-text-muted);
+}
+
+/* -- Pagination ----------------------------------------------------------- */
+
+.conversation-pagination {
+    padding: 10px 16px;
+    border-top: 1px solid var(--portal-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--portal-text-muted);
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.pagination-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    background-color: var(--portal-surface);
+    color: var(--portal-text-secondary);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all var(--portal-transition);
+}
+
+.pagination-btn:hover:not(:disabled) {
+    border-color: var(--portal-primary);
+    color: var(--portal-primary);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.pagination-btn.active {
+    background-color: var(--portal-primary);
+    border-color: var(--portal-primary);
+    color: #ffffff;
+}
+
+
+/* =============================================================================
+   9. Conversation Detail Panel
+   ============================================================================= */
+
+.conversation-detail-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.conversation-detail-panel.empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* -- Detail Header -------------------------------------------------------- */
+
+.detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--portal-border);
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.detail-header-info {
+    min-width: 0;
+}
+
+.detail-header-info h3 {
+    font-size: 15px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.detail-header-info p {
+    font-size: 12px;
+    color: var(--portal-text-muted);
+    margin-top: 2px;
+}
+
+.detail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+
+/* =============================================================================
+   10. Message Thread
+   ============================================================================= */
+
+.message-thread {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.message-bubble {
+    max-width: 75%;
+    padding: 10px 14px;
+    border-radius: var(--portal-radius-lg);
+    font-size: 13px;
+    line-height: 1.55;
+    position: relative;
+    animation: fadeIn 0.2s ease;
+}
+
+.message-user {
+    align-self: flex-end;
+    background-color: var(--portal-primary);
+    color: #ffffff;
+    border-bottom-right-radius: 4px;
+}
+
+.message-bot {
+    align-self: flex-start;
+    background-color: #f0f1f3;
+    color: var(--portal-text);
+    border-bottom-left-radius: 4px;
+}
+
+.message-system {
+    align-self: center;
+    background-color: transparent;
+    color: var(--portal-text-muted);
+    font-style: italic;
+    font-size: 12px;
+    padding: 6px 12px;
+    max-width: 90%;
+    text-align: center;
+}
+
+.message-timestamp {
+    font-size: 10px;
+    color: var(--portal-text-muted);
+    margin-top: 4px;
+    display: block;
+}
+
+.message-user .message-timestamp {
+    text-align: right;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* -- Expandable Metadata -------------------------------------------------- */
+
+.message-metadata-toggle {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--portal-text-muted);
+    cursor: pointer;
+    margin-top: 4px;
+    transition: color var(--portal-transition);
+    user-select: none;
+}
+
+.message-metadata-toggle:hover {
+    color: var(--portal-primary);
+}
+
+.message-user .message-metadata-toggle {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.message-user .message-metadata-toggle:hover {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.message-metadata {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    font-size: 11px;
+    color: var(--portal-text-secondary);
+    line-height: 1.6;
+}
+
+.message-metadata.expanded {
+    display: block;
+    animation: fadeIn 0.2s ease;
+}
+
+.message-user .message-metadata {
+    border-top-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.metadata-row {
+    display: flex;
+    gap: 8px;
+}
+
+.metadata-row .metadata-key {
+    font-weight: 600;
+    min-width: 80px;
+    flex-shrink: 0;
+}
+
+
+/* =============================================================================
+   11. Labels & Rating Panel
+   ============================================================================= */
+
+.labels-panel {
+    border-top: 1px solid var(--portal-border);
+    padding: 16px 20px;
+    flex-shrink: 0;
+    background-color: var(--portal-surface);
+}
+
+.labels-panel-section {
+    margin-bottom: 12px;
+}
+
+.labels-panel-section:last-child {
+    margin-bottom: 0;
+}
+
+.labels-panel-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--portal-text-muted);
+    margin-bottom: 8px;
+}
+
+/* -- Label Chips ---------------------------------------------------------- */
+
+.labels-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.label-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 20px;
+    white-space: nowrap;
+    user-select: none;
+    transition: opacity var(--portal-transition);
+}
+
+.label-chip .label-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.1);
+    color: inherit;
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background-color var(--portal-transition);
+}
+
+.label-chip .label-remove:hover {
+    background-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Label color variants */
+.label-chip.label-bug {
+    background-color: #fde8e8;
+    color: #991b1b;
+}
+
+.label-chip.label-hallucination {
+    background-color: #ffedd5;
+    color: #9a3412;
+}
+
+.label-chip.label-missing-context {
+    background-color: #fef9c3;
+    color: #854d0e;
+}
+
+.label-chip.label-needs-content {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.label-chip.label-good-answer {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+[data-theme="dark"] .label-chip.label-bug {
+    background-color: #450a0a;
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .label-chip.label-hallucination {
+    background-color: #431407;
+    color: #fdba74;
+}
+
+[data-theme="dark"] .label-chip.label-missing-context {
+    background-color: #422006;
+    color: #fde047;
+}
+
+[data-theme="dark"] .label-chip.label-needs-content {
+    background-color: #172554;
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .label-chip.label-good-answer {
+    background-color: #052e16;
+    color: #6ee7b7;
+}
+
+/* -- Add Label Dropdown --------------------------------------------------- */
+
+.add-label-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.add-label-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--portal-text-muted);
+    border: 1px dashed var(--portal-border);
+    border-radius: 20px;
+    background: none;
+    cursor: pointer;
+    transition: all var(--portal-transition);
+}
+
+.add-label-btn:hover {
+    border-color: var(--portal-primary);
+    color: var(--portal-primary);
+}
+
+.add-label-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 180px;
+    background-color: var(--portal-surface);
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    box-shadow: var(--portal-shadow-lg);
+    z-index: 50;
+    padding: 4px 0;
+    display: none;
+}
+
+.add-label-menu.open {
+    display: block;
+    animation: fadeIn 0.15s ease;
+}
+
+.add-label-menu-item {
+    display: block;
+    width: 100%;
+    padding: 8px 14px;
+    font-size: 12px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--portal-text);
+    cursor: pointer;
+    transition: background-color var(--portal-transition);
+}
+
+.add-label-menu-item:hover {
+    background-color: var(--portal-primary-light);
+}
+
+/* -- Rating --------------------------------------------------------------- */
+
+.rating-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.rating-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    background-color: var(--portal-surface);
+    color: var(--portal-text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    transition: all var(--portal-transition);
+}
+
+.rating-btn:hover {
+    border-color: var(--portal-primary);
+    color: var(--portal-primary);
+    background-color: var(--portal-primary-light);
+}
+
+.rating-btn.active.thumbs-up {
+    background-color: #d1fae5;
+    border-color: var(--portal-success);
+    color: var(--portal-success);
+}
+
+.rating-btn.active.thumbs-down {
+    background-color: #fde8e8;
+    border-color: var(--portal-danger);
+    color: var(--portal-danger);
+}
+
+[data-theme="dark"] .rating-btn.active.thumbs-up {
+    background-color: #052e16;
+    border-color: var(--portal-success);
+    color: var(--portal-success);
+}
+
+[data-theme="dark"] .rating-btn.active.thumbs-down {
+    background-color: #450a0a;
+    border-color: var(--portal-danger);
+    color: var(--portal-danger);
+}
+
+/* -- Notes ---------------------------------------------------------------- */
+
+.notes-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.notes-textarea {
+    width: 100%;
+    min-height: 60px;
+    padding: 10px 12px;
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    background-color: var(--portal-surface);
+    color: var(--portal-text);
+    resize: vertical;
+    outline: none;
+    font-size: 13px;
+    line-height: 1.5;
+    transition: border-color var(--portal-transition), box-shadow var(--portal-transition);
+}
+
+.notes-textarea:focus {
+    border-color: var(--portal-primary);
+    box-shadow: 0 0 0 3px rgba(44, 94, 46, 0.1);
+}
+
+.notes-textarea::placeholder {
+    color: var(--portal-text-muted);
+}
+
+.notes-actions {
+    display: flex;
+    justify-content: flex-end;
+}
+
+
+/* =============================================================================
+   12. Export Modal
+   ============================================================================= */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 16px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity var(--portal-transition), visibility var(--portal-transition);
+}
+
+.modal-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+[data-theme="dark"] .modal-overlay {
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.modal {
+    width: 100%;
+    max-width: 500px;
+    background-color: var(--portal-surface);
+    border-radius: var(--portal-radius-lg);
+    box-shadow: var(--portal-shadow-lg);
+    transform: scale(0.95);
+    transition: transform var(--portal-transition);
+}
+
+.modal-overlay.visible .modal {
+    transform: scale(1);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--portal-border);
+}
+
+.modal-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--portal-text-muted);
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: var(--portal-radius);
+    transition: background-color var(--portal-transition), color var(--portal-transition);
+    line-height: 1;
+}
+
+.modal-close:hover {
+    background-color: var(--portal-bg);
+    color: var(--portal-text);
+}
+
+.modal-body {
+    padding: 24px;
+}
+
+.modal-section {
+    margin-bottom: 20px;
+}
+
+.modal-section:last-child {
+    margin-bottom: 0;
+}
+
+.modal-section-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--portal-text-secondary);
+    margin-bottom: 10px;
+}
+
+/* -- Radio Group ---------------------------------------------------------- */
+
+.radio-group {
+    display: flex;
+    gap: 12px;
+}
+
+.radio-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--portal-text);
+}
+
+.radio-option input[type="radio"] {
+    accent-color: var(--portal-primary);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* -- Checkbox Group ------------------------------------------------------- */
+
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--portal-text);
+}
+
+.checkbox-option input[type="checkbox"] {
+    accent-color: var(--portal-primary);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+/* -- Modal Footer --------------------------------------------------------- */
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--portal-border);
+}
+
+
+/* =============================================================================
+   13. Buttons
+   ============================================================================= */
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.4;
+    border: 1px solid transparent;
+    border-radius: var(--portal-radius);
+    cursor: pointer;
+    transition: all var(--portal-transition);
+    white-space: nowrap;
+    user-select: none;
+    text-decoration: none;
+}
+
+.btn:hover {
+    text-decoration: none;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--portal-primary);
+    outline-offset: 2px;
+}
+
+.btn-primary {
+    background-color: var(--portal-primary);
+    border-color: var(--portal-primary);
+    color: #ffffff;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: var(--portal-primary-hover);
+    border-color: var(--portal-primary-hover);
+}
+
+.btn-secondary {
+    background-color: var(--portal-surface);
+    border-color: var(--portal-border);
+    color: var(--portal-text);
+}
+
+.btn-secondary:hover:not(:disabled) {
+    border-color: var(--portal-primary);
+    color: var(--portal-primary);
+    background-color: var(--portal-primary-light);
+}
+
+.btn-danger {
+    background-color: var(--portal-danger);
+    border-color: var(--portal-danger);
+    color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+    background-color: #b91c1c;
+    border-color: #b91c1c;
+}
+
+.btn-ghost {
+    background-color: transparent;
+    border-color: transparent;
+    color: var(--portal-text-secondary);
+}
+
+.btn-ghost:hover:not(:disabled) {
+    background-color: var(--portal-bg);
+    color: var(--portal-text);
+}
+
+.btn-sm {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+.btn-icon {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--portal-radius);
+}
+
+
+/* =============================================================================
+   14. Badges & Chips
+   ============================================================================= */
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    border-radius: 10px;
+    white-space: nowrap;
+}
+
+.badge-primary {
+    background-color: var(--portal-primary);
+    color: #ffffff;
+}
+
+.badge-info {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.badge-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+}
+
+.badge-danger {
+    background-color: #fde8e8;
+    color: #991b1b;
+}
+
+.badge-success {
+    background-color: #d1fae5;
+    color: #065f46;
+}
+
+.badge-muted {
+    background-color: var(--portal-bg);
+    color: var(--portal-text-muted);
+}
+
+[data-theme="dark"] .badge-info {
+    background-color: #172554;
+    color: #93c5fd;
+}
+
+[data-theme="dark"] .badge-warning {
+    background-color: #422006;
+    color: #fde047;
+}
+
+[data-theme="dark"] .badge-danger {
+    background-color: #450a0a;
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .badge-success {
+    background-color: #052e16;
+    color: #6ee7b7;
+}
+
+[data-theme="dark"] .badge-muted {
+    background-color: #334155;
+    color: var(--portal-text-muted);
+}
+
+
+/* =============================================================================
+   15. Utility Classes (Empty State, Spinner, Toast)
+   ============================================================================= */
+
+/* -- Empty State ---------------------------------------------------------- */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 24px;
+    text-align: center;
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.4;
+}
+
+.empty-state-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--portal-text);
+    margin-bottom: 6px;
+}
+
+.empty-state-text {
+    font-size: 13px;
+    color: var(--portal-text-muted);
+    max-width: 300px;
+    line-height: 1.5;
+}
+
+/* -- Loading Spinner ------------------------------------------------------ */
+
+.loading-spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--portal-border);
+    border-top-color: var(--portal-primary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+
+.loading-spinner.spinner-sm {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+}
+
+.loading-spinner.spinner-lg {
+    width: 36px;
+    height: 36px;
+    border-width: 4px;
+}
+
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 48px 24px;
+}
+
+.loading-container .loading-text {
+    font-size: 13px;
+    color: var(--portal-text-muted);
+}
+
+/* -- Skeleton Loading ----------------------------------------------------- */
+
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        var(--portal-border) 25%,
+        var(--portal-bg) 50%,
+        var(--portal-border) 75%
+    );
+    background-size: 200% 100%;
+    animation: pulse 1.5s ease-in-out infinite;
+    border-radius: var(--portal-radius);
+}
+
+.skeleton-line {
+    height: 14px;
+    margin-bottom: 8px;
+}
+
+.skeleton-line.short {
+    width: 60%;
+}
+
+.skeleton-line.medium {
+    width: 80%;
+}
+
+.skeleton-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+/* -- Toast Notification --------------------------------------------------- */
+
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.toast-notification {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    background-color: var(--portal-surface);
+    border: 1px solid var(--portal-border);
+    border-radius: var(--portal-radius);
+    box-shadow: var(--portal-shadow-lg);
+    font-size: 13px;
+    color: var(--portal-text);
+    pointer-events: auto;
+    min-width: 280px;
+    max-width: 400px;
+    animation: toastIn 0.3s ease forwards;
+}
+
+.toast-notification.toast-exit {
+    animation: toastOut 0.3s ease forwards;
+}
+
+.toast-notification .toast-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.toast-notification .toast-message {
+    flex: 1;
+    line-height: 1.4;
+}
+
+.toast-notification .toast-close {
+    background: none;
+    border: none;
+    color: var(--portal-text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    padding: 0 2px;
+    flex-shrink: 0;
+    transition: color var(--portal-transition);
+}
+
+.toast-notification .toast-close:hover {
+    color: var(--portal-text);
+}
+
+.toast-notification.toast-success {
+    border-left: 4px solid var(--portal-success);
+}
+
+.toast-notification.toast-error {
+    border-left: 4px solid var(--portal-danger);
+}
+
+.toast-notification.toast-warning {
+    border-left: 4px solid var(--portal-warning);
+}
+
+.toast-notification.toast-info {
+    border-left: 4px solid var(--portal-info);
+}
+
+/* -- Visually Hidden (Accessibility) -------------------------------------- */
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+/* -- Text Utilities ------------------------------------------------------- */
+
+.text-truncate {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.text-muted {
+    color: var(--portal-text-muted);
+}
+
+.text-secondary {
+    color: var(--portal-text-secondary);
+}
+
+.text-danger {
+    color: var(--portal-danger);
+}
+
+.text-success {
+    color: var(--portal-success);
+}
+
+.text-center {
+    text-align: center;
+}
+
+/* -- Spacing Utilities ---------------------------------------------------- */
+
+.mt-0 { margin-top: 0; }
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+.mb-0 { margin-bottom: 0; }
+.mb-8 { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.mb-24 { margin-bottom: 24px; }
+
+/* -- Flex Utilities ------------------------------------------------------- */
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+
+
+/* =============================================================================
+   16. Responsive Breakpoints
+   ============================================================================= */
+
+/* -- Tablet (below 1024px) ------------------------------------------------ */
+
+@media (max-width: 1024px) {
+    .sidebar-toggle {
+        display: block;
+    }
+
+    .portal-sidebar {
+        transform: translateX(-100%);
+    }
+
+    .portal-sidebar.open {
+        transform: translateX(0);
+        animation: slideIn 0.3s ease;
+        box-shadow: var(--portal-shadow-lg);
+    }
+
+    .portal-main {
+        margin-left: 0;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .conversation-list-panel {
+        width: 320px;
+        min-width: 320px;
+    }
+}
+
+/* -- Mobile landscape / small tablet (below 768px) ------------------------ */
+
+@media (max-width: 768px) {
+    .portal-main {
+        padding: 16px;
+    }
+
+    .conversations-container {
+        flex-direction: column;
+        height: auto;
+        min-height: auto;
+    }
+
+    .conversation-list-panel {
+        width: 100%;
+        min-width: 100%;
+        max-height: 50vh;
+        border-right: none;
+        border-bottom: 1px solid var(--portal-border);
+    }
+
+    .conversation-detail-panel {
+        min-height: 400px;
+    }
+
+    .detail-header {
+        flex-wrap: wrap;
+    }
+
+    .detail-header-actions {
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    .labels-panel {
+        padding: 12px 16px;
+    }
+
+    .message-bubble {
+        max-width: 88%;
+    }
+
+    .modal {
+        max-width: 100%;
+        margin: 16px;
+    }
+
+    .portal-header-left h1 {
+        font-size: 14px;
+    }
+
+    .header-user-info .user-name {
+        display: none;
+    }
+}
+
+/* -- Mobile portrait (below 480px) ---------------------------------------- */
+
+@media (max-width: 480px) {
+    :root {
+        --portal-header-height: 48px;
+    }
+
+    .portal-main {
+        padding: 12px;
+    }
+
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .stat-card {
+        padding: 16px;
+    }
+
+    .stat-card-value {
+        font-size: 24px;
+    }
+
+    .login-card {
+        padding: 24px;
+    }
+
+    .view-header h2 {
+        font-size: 18px;
+    }
+
+    .conversation-list-panel {
+        max-height: 40vh;
+    }
+
+    .conversation-item {
+        padding: 10px 12px;
+    }
+
+    .message-thread {
+        padding: 12px;
+    }
+
+    .detail-header {
+        padding: 10px 12px;
+    }
+
+    .modal-header,
+    .modal-footer {
+        padding: 12px 16px;
+    }
+
+    .modal-body {
+        padding: 16px;
+    }
+
+    .radio-group {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .toast-container {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+    }
+
+    .toast-notification {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .portal-header-right {
+        gap: 8px;
+    }
+
+    .header-logout-btn {
+        padding: 4px 10px;
+        font-size: 12px;
+    }
+
+    .dark-mode-toggle {
+        padding: 4px 8px;
+    }
+}

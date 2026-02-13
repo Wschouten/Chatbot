@@ -15,7 +15,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from rag_engine import RagEngine, get_openai_health
-from shipping_api import get_shipment_status
+from shipping_api import get_shipment_status, get_shipping_client
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
@@ -285,6 +285,25 @@ def health():
             "error": str(e)
         }
 
+    # Check shipping API
+    try:
+        shipping_client = get_shipping_client()
+        if shipping_client.use_mock:
+            health_status["dependencies"]["shipping"] = {
+                "status": "mock_mode",
+                "message": "Using mock shipping responses (no API key)"
+            }
+        else:
+            health_status["dependencies"]["shipping"] = {
+                "status": "configured",
+                "message": "Shipping API configured"
+            }
+    except Exception as e:
+        health_status["dependencies"]["shipping"] = {
+            "status": "error",
+            "error": str(e)
+        }
+
     return jsonify(health_status), status_code
 
 @app.route('/api/session', methods=['POST'])
@@ -352,6 +371,31 @@ def save_session_state(session_id: str, state: dict[str, Any]) -> None:
     path = os.path.join(SESSION_DIR, f"{safe_id}.json")
     with open(path, 'w', encoding='utf-8') as f:
         json.dump(state, f)
+
+
+def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
+    """Format shipping API result into user-friendly Dutch message."""
+    status = result["status"]
+    details = result.get("details", {})
+
+    if status == "in_transit":
+        location = details.get("location", "onbekend")
+        delivery = details.get("estimated_delivery", "")
+        return f"✅ Je bestelling **#{order_id}** is onderweg!\n\n📍 Huidige locatie: {location}\n📅 Verwachte levering: {delivery}"
+
+    elif status == "delivered":
+        delivered_date = details.get("delivered_date", "")
+        return f"✅ Je bestelling **#{order_id}** is afgeleverd op {delivered_date}! 🎉"
+
+    elif status == "pending":
+        return f"📦 Bestelling **#{order_id}** is nog in behandeling. We sturen je een trackingcode zodra het pakket verzonden is."
+
+    elif status == "out_for_delivery":
+        return f"🚚 Je bestelling **#{order_id}** is vandaag onderweg naar jou!"
+
+    else:
+        return f"📦 Status bestelling **#{order_id}**: {status}"
+
 
 @app.route('/api/chat', methods=['POST'])
 @limiter.limit("30 per minute")
@@ -484,12 +528,65 @@ def chat() -> Response:
                     return jsonify({"response": "I'm sorry, something went wrong sending your message. Please contact us directly.", "request_id": request_id})
 
 
-    # Simple Intent Detection for Shipping
-    order_match = re.search(r'order\s*#?\s*(\d+)', user_message.lower())
-    
+    # Check if user is responding to a pending order confirmation
+    if state_data.get('awaiting_order_confirmation'):
+        # Check for timeout (5 minutes)
+        confirmation_time = state_data.get('confirmation_timestamp')
+        if confirmation_time:
+            ts = datetime.datetime.fromisoformat(confirmation_time)
+            if datetime.datetime.now() - ts > datetime.timedelta(minutes=5):
+                # Timeout - clear stale confirmation state
+                state_data.pop('awaiting_order_confirmation', None)
+                state_data.pop('pending_order_id', None)
+                state_data.pop('confirmation_timestamp', None)
+                save_session_state(session_id, state_data)
+                # Fall through to normal processing (don't treat as confirmation)
+            else:
+                # Not timed out - process confirmation response
+                order_id = state_data.get('pending_order_id')
+
+                # User confirmed (yes/ja/correct/klopt/inderdaad)
+                if re.search(r'\b(ja|yes|correct|klopt|inderdaad)\b', user_message.lower()):
+                    client = get_shipping_client()
+                    result = client.get_shipment_status(order_id)
+
+                    # Clear confirmation state
+                    state_data.pop('awaiting_order_confirmation', None)
+                    state_data.pop('pending_order_id', None)
+                    state_data.pop('confirmation_timestamp', None)
+                    save_session_state(session_id, state_data)
+
+                    if result["success"]:
+                        response_text = format_shipping_response(result, order_id)
+                    else:
+                        response_text = f"❌ {result.get('error', 'Kon tracking info niet ophalen.')}"
+
+                    return jsonify({"response": response_text, "request_id": request_id})
+
+                # User declined (nee/no/nope/incorrect/verkeerd)
+                elif re.search(r'\b(nee|no|nope|incorrect|verkeerd)\b', user_message.lower()):
+                    state_data.pop('awaiting_order_confirmation', None)
+                    state_data.pop('pending_order_id', None)
+                    state_data.pop('confirmation_timestamp', None)
+                    save_session_state(session_id, state_data)
+
+                    response_text = "Oké, geen probleem! Wat is je correcte bestelnummer?"
+                    return jsonify({"response": response_text, "request_id": request_id})
+
+    # Detect potential order number in message (English: order, Dutch: bestelling)
+    order_match = re.search(r'(?:order|bestelling)\s*#?\s*(\d+)', user_message.lower())
+
     if order_match:
         order_id = order_match.group(1)
-        response_text = get_shipment_status(order_id)
+
+        # Set confirmation state with timestamp
+        state_data['awaiting_order_confirmation'] = True
+        state_data['pending_order_id'] = order_id
+        state_data['confirmation_timestamp'] = datetime.datetime.now().isoformat()
+        save_session_state(session_id, state_data)
+
+        # Ask for confirmation
+        response_text = f"Wil je de status opvragen van bestelling **#{order_id}**? (Antwoord met 'ja' of 'nee')"
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Feature 15: Detect language BEFORE RAG call so we can translate queries

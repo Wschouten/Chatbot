@@ -15,6 +15,7 @@ services:
       # [NEW] Map Source Code for Instant Updates (Hot Reloading)
       - ./backend:/app/backend
       - ./frontend:/app/frontend
+      - ./portal:/app/portal
       # Sessions directory with proper permissions (overrides the bind mount)
       - sessions_data:/app/backend/sessions
       # Logs directory with proper permissions

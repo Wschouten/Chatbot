@@ -3,7 +3,7 @@
 **Track:** Operations
 **Effort:** 30 min setup + ongoing
 **Status:** Todo
-**Dependencies:** Feature 21 (Shopify Widget Integration — store must be live with the widget)
+**Dependencies:** Feature 29 (End-to-End Acceptance Testing — all tests pass on live store)
 
 ## Context
 

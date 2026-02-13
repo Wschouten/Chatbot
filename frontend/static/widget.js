@@ -367,7 +367,7 @@
             const consent = localStorage.getItem(CONSENT_KEY);
             if (consent === 'accepted') {
                 hasConsent = true;
-                sessionId = localStorage.getItem(SESSION_KEY);
+                sessionId = sessionStorage.getItem(SESSION_KEY);
                 consentOverlay.classList.add('gc-hidden');
                 if (!sessionId) fetchSession();
             } else if (consent === 'declined') {
@@ -393,7 +393,7 @@
                 const data = await response.json();
                 if (data.session_id) {
                     sessionId = data.session_id;
-                    localStorage.setItem(SESSION_KEY, sessionId);
+                    sessionStorage.setItem(SESSION_KEY, sessionId);
                 }
             } catch (error) {
                 console.error('GroundCoverGroup Chatbot: Failed to get session', error);

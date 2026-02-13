@@ -94,7 +94,7 @@ class RagEngine:
         self.knowledge_base_path = knowledge_base_path
         self.persist_directory = persist_directory
         self.collection_name = "groundcovergroup_docs"
-        self.openai_client: Optional[OpenAI] = None
+        self.openai_client: Any = None
         self.collection: Any = None
         self.chroma_client: Any = None
 
@@ -105,12 +105,8 @@ class RagEngine:
         # Feature 13: Retrieval Quality Improvements
         self.relevance_threshold = float(os.getenv('RAG_RELEVANCE_THRESHOLD', '1.2'))
 
-        # Initialize OpenAI
-        try:
-            self.openai_client = OpenAI()
-            logger.info("OpenAI Client Initialized Successfully.")
-        except Exception as e:
-            logger.error("OpenAI Initialization Error: %s", e)
+        # Initialize OpenAI (uses the lazy singleton from get_openai_client)
+        self.openai_client = get_openai_client()
 
         # Initialize ChromaDB (Only if dependencies loaded)
         # Retry once after a short delay to handle gunicorn worker race conditions

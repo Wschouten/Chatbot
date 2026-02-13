@@ -165,7 +165,8 @@ Output only valid JSON, nothing else."""
         # Measure response time
         start_time = time.time()
         try:
-            answer = self.rag_engine.get_answer(question, chat_history=None)
+            chat_history = test_case.get("chat_history", None)
+            answer = self.rag_engine.get_answer(question, chat_history=chat_history)
         except Exception as e:
             print(f"    Error: {e}")
             answer = f"ERROR: {e}"

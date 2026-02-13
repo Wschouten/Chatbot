@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Log Portal - GroundCoverGroup</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='portal.css') }}">
+</head>
+
+<body class="portal-body">
+
+    <!-- ================================================================
+         LOGIN SCREEN
+         ================================================================ -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <div class="login-logo">
+                <h1>GroundCoverGroup</h1>
+                <p>Chat Log Portal</p>
+            </div>
+            <form id="loginForm" autocomplete="off">
+                <div class="login-field">
+                    <label for="loginUsername">Username</label>
+                    <input type="text" id="loginUsername" name="username" placeholder="Enter your username" required
+                        autofocus>
+                </div>
+                <div class="login-field">
+                    <label for="loginPassword">Password</label>
+                    <input type="password" id="loginPassword" name="password" placeholder="Enter your password"
+                        required>
+                </div>
+                <div class="login-error" id="loginError" role="alert" aria-live="polite"></div>
+                <button type="submit" class="btn btn-primary" id="loginBtn">Sign In</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         PORTAL LAYOUT (hidden until authenticated)
+         ================================================================ -->
+    <div id="portalLayout" style="display: none;">
+
+        <!-- ============================================================
+             HEADER
+             ============================================================ -->
+        <header class="portal-header" role="banner">
+            <div class="portal-header-left">
+                <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle sidebar navigation">
+                    &#9776;
+                </button>
+                <span class="header-icon" aria-hidden="true">&#127793;</span>
+                <h1>Chat Log Portal</h1>
+            </div>
+            <div class="portal-header-right">
+                <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode"
+                    title="Toggle dark mode">
+                    &#9790;
+                </button>
+                <div class="header-user-info">
+                    <span class="user-avatar" id="userAvatar" aria-hidden="true">A</span>
+                    <span class="user-name" id="userName">admin</span>
+                </div>
+                <button class="header-logout-btn" id="logoutBtn" aria-label="Sign out">Sign Out</button>
+            </div>
+        </header>
+
+        <!-- ============================================================
+             SIDEBAR
+             ============================================================ -->
+        <nav class="portal-sidebar" id="portalSidebar" role="navigation" aria-label="Main navigation">
+            <div class="sidebar-nav">
+                <a class="sidebar-nav-item active" href="#" data-view="dashboard" id="navDashboard" role="menuitem">
+                    <span class="nav-icon" aria-hidden="true">&#128202;</span>
+                    Dashboard
+                </a>
+                <a class="sidebar-nav-item" href="#" data-view="conversations" id="navConversations" role="menuitem">
+                    <span class="nav-icon" aria-hidden="true">&#128172;</span>
+                    Conversations
+                </a>
+                <a class="sidebar-nav-item" href="#" data-view="search" id="navSearch" role="menuitem">
+                    <span class="nav-icon" aria-hidden="true">&#128269;</span>
+                    Search
+                </a>
+                <a class="sidebar-nav-item" href="#" data-view="export" id="navExport" role="menuitem">
+                    <span class="nav-icon" aria-hidden="true">&#128230;</span>
+                    Export
+                </a>
+                <a class="sidebar-nav-item" href="#" data-view="settings" id="navSettings" role="menuitem">
+                    <span class="nav-icon" aria-hidden="true">&#9881;</span>
+                    Settings
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <span id="sidebarVersion">Portal v1.0</span> &middot; localStorage
+            </div>
+        </nav>
+
+        <!-- Sidebar Backdrop (mobile overlay) -->
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+        <!-- ============================================================
+             MAIN CONTENT AREA
+             ============================================================ -->
+        <main class="portal-main" role="main">
+
+            <!-- ========================================================
+                 DASHBOARD VIEW
+                 ======================================================== -->
+            <section class="portal-view active" id="view-dashboard" aria-label="Dashboard">
+                <div class="view-header">
+                    <h2>Dashboard</h2>
+                    <p>Overview of chatbot conversations and performance metrics.</p>
+                </div>
+
+                <div class="dashboard-grid" id="dashboardGrid">
+                    <div class="stat-card stat-primary" id="statTotalConversations">
+                        <div class="stat-card-label">Total Conversations</div>
+                        <div class="stat-card-value" id="statTotal">--</div>
+                        <div class="stat-card-subtitle" id="statTotalSubtitle">All time</div>
+                    </div>
+                    <div class="stat-card stat-info" id="statAvgMessagesCard">
+                        <div class="stat-card-label">Avg Messages</div>
+                        <div class="stat-card-value" id="statAvgMessages">--</div>
+                        <div class="stat-card-subtitle">Per conversation</div>
+                    </div>
+                    <div class="stat-card stat-warning" id="statEscalationRate">
+                        <div class="stat-card-label">Escalation Rate</div>
+                        <div class="stat-card-value" id="statEscalation">--%</div>
+                        <div class="stat-card-subtitle" id="statEscalationSubtitle">Handed to human</div>
+                    </div>
+                    <div class="stat-card stat-danger" id="statUnknownRate">
+                        <div class="stat-card-label">Unknown Rate</div>
+                        <div class="stat-card-value" id="statUnknown">--%</div>
+                        <div class="stat-card-subtitle" id="statUnknownSubtitle">Flagged as unknown</div>
+                    </div>
+                    <div class="stat-card stat-success" id="statAvgRatingCard">
+                        <div class="stat-card-label">Avg Rating</div>
+                        <div class="stat-card-value" id="statAvgRating">--</div>
+                        <div class="stat-card-subtitle" id="statAvgRatingSubtitle">From rated conversations</div>
+                    </div>
+                    <div class="stat-card stat-info" id="statThisWeekCard">
+                        <div class="stat-card-label">This Week</div>
+                        <div class="stat-card-value" id="statThisWeek">--</div>
+                        <div class="stat-card-subtitle">Last 7 days</div>
+                    </div>
+                </div>
+
+                <div class="dashboard-chart-area" id="dashboardChartArea">
+                    <h3>Conversation Trends</h3>
+                    <div class="chart-placeholder" id="chartPlaceholder">
+                        Chart visualization will be displayed here in a future update.
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================
+                 CONVERSATIONS VIEW
+                 ======================================================== -->
+            <section class="portal-view" id="view-conversations" aria-label="Conversations">
+                <div class="view-header">
+                    <h2>Conversations</h2>
+                    <p>Browse and review chatbot conversations.</p>
+                </div>
+
+                <div class="conversations-container" id="conversationsContainer">
+                    <!-- LEFT: Conversation List Panel -->
+                    <div class="conversation-list-panel">
+                        <div class="conversation-search">
+                            <div class="search-input-wrapper">
+                                <input type="text" id="conversationSearch" placeholder="Search conversations..."
+                                    aria-label="Search conversations">
+                            </div>
+                        </div>
+
+                        <div class="conversation-filters" id="conversationFilters" role="group"
+                            aria-label="Conversation filters">
+                            <button class="filter-chip active" data-filter="status:all" id="filterAll">
+                                All <span class="chip-count" id="filterAllCount">0</span>
+                            </button>
+                            <button class="filter-chip" data-filter="status:resolved" id="filterResolved">
+                                Resolved <span class="chip-count" id="filterResolvedCount">0</span>
+                            </button>
+                            <button class="filter-chip" data-filter="status:escalated" id="filterEscalated">
+                                Escalated <span class="chip-count" id="filterEscalatedCount">0</span>
+                            </button>
+                            <button class="filter-chip" data-filter="status:unknown_flagged" id="filterUnknown">
+                                Unknown <span class="chip-count" id="filterUnknownCount">0</span>
+                            </button>
+                            <button class="filter-chip" data-filter="status:open" id="filterOpen">
+                                Open <span class="chip-count" id="filterOpenCount">0</span>
+                            </button>
+                            <button class="filter-chip" data-filter="language:nl" id="filterNL">
+                                NL
+                            </button>
+                            <button class="filter-chip" data-filter="language:en" id="filterEN">
+                                EN
+                            </button>
+                        </div>
+
+                        <div class="conversation-list" id="conversationList" role="listbox"
+                            aria-label="Conversation list">
+                            <!-- Populated by JS: conversation-item elements -->
+                            <div class="loading-container" id="conversationListLoading">
+                                <div class="loading-spinner"></div>
+                                <span class="loading-text">Loading conversations...</span>
+                            </div>
+                        </div>
+
+                        <div class="conversation-pagination" id="conversationPagination">
+                            <span id="paginationInfo">-- of --</span>
+                            <div class="pagination-buttons" id="paginationButtons">
+                                <button class="pagination-btn" id="prevPage" disabled aria-label="Previous page">&laquo;
+                                    Prev</button>
+                                <button class="pagination-btn" id="nextPage" disabled aria-label="Next page">Next
+                                    &raquo;</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RIGHT: Conversation Detail Panel -->
+                    <div class="conversation-detail-panel empty" id="conversationDetailPanel">
+                        <!-- Empty state (shown when no conversation is selected) -->
+                        <div class="empty-state" id="detailEmpty">
+                            <div class="empty-state-icon" aria-hidden="true">&#128172;</div>
+                            <div class="empty-state-title">Select a conversation</div>
+                            <div class="empty-state-text">Choose a conversation from the list to view its messages and
+                                details.</div>
+                        </div>
+
+                        <!-- Detail content (hidden until a conversation is selected) -->
+                        <div id="conversationDetail" style="display: none; flex-direction: column; height: 100%;">
+                            <div class="detail-header" id="detailHeader">
+                                <div class="detail-header-info">
+                                    <h3 id="detailTitle">--</h3>
+                                    <p id="detailSubtitle">--</p>
+                                </div>
+                                <div class="detail-header-actions">
+                                    <span class="badge" id="detailStatusBadge"></span>
+                                    <select class="btn btn-sm btn-secondary" id="detailStatusSelect"
+                                        aria-label="Change conversation status">
+                                        <option value="open">Open</option>
+                                        <option value="resolved">Resolved</option>
+                                        <option value="escalated">Escalated</option>
+                                        <option value="unknown_flagged">Unknown</option>
+                                    </select>
+                                    <button class="btn btn-sm btn-secondary" id="detailExportBtn"
+                                        aria-label="Export this conversation" title="Export this conversation">
+                                        &#128230; Export
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="message-thread" id="messageThread" aria-label="Message thread">
+                                <!-- Populated by JS: message-bubble elements -->
+                            </div>
+
+                            <div class="labels-panel" id="labelsPanel">
+                                <!-- Labels Section -->
+                                <div class="labels-panel-section">
+                                    <div class="labels-panel-title">Labels</div>
+                                    <div class="labels-container" id="labelsContainer">
+                                        <!-- Populated by JS: label-chip elements -->
+                                    </div>
+                                    <div class="add-label-dropdown" id="addLabelDropdown">
+                                        <button class="add-label-btn" id="addLabelBtn" aria-haspopup="true"
+                                            aria-expanded="false">
+                                            + Add label
+                                        </button>
+                                        <div class="add-label-menu" id="addLabelMenu" role="menu">
+                                            <!-- Populated by JS: add-label-menu-item buttons -->
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Rating Section -->
+                                <div class="labels-panel-section">
+                                    <div class="labels-panel-title">Rating</div>
+                                    <div class="rating-container" id="ratingContainer">
+                                        <button class="rating-btn thumbs-up" id="ratingUp" aria-label="Rate good"
+                                            title="Good">&#128077;</button>
+                                        <button class="rating-btn thumbs-down" id="ratingDown" aria-label="Rate bad"
+                                            title="Bad">&#128078;</button>
+                                        <span class="text-muted" id="ratingDisplay"
+                                            style="font-size: 12px; margin-left: 4px;"></span>
+                                    </div>
+                                </div>
+
+                                <!-- Notes Section -->
+                                <div class="labels-panel-section">
+                                    <div class="labels-panel-title">Notes</div>
+                                    <div class="notes-container" id="notesContainer">
+                                        <div id="notesList">
+                                            <!-- Populated by JS: existing notes -->
+                                        </div>
+                                        <textarea class="notes-textarea" id="notesTextarea"
+                                            placeholder="Add an internal note..."
+                                            aria-label="Add a note to this conversation" rows="2"></textarea>
+                                        <div class="notes-actions">
+                                            <button class="btn btn-sm btn-primary" id="addNoteBtn">Save Note</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================
+                 SEARCH VIEW
+                 ======================================================== -->
+            <section class="portal-view" id="view-search" aria-label="Search">
+                <div class="view-header">
+                    <h2>Search</h2>
+                    <p>Full-text search across all conversations, messages, and notes.</p>
+                </div>
+
+                <div class="mb-16">
+                    <div class="search-input-wrapper" style="max-width: 600px;">
+                        <input type="text" id="globalSearch" placeholder="Search messages, notes, labels..."
+                            aria-label="Global search">
+                    </div>
+                </div>
+
+                <div class="flex gap-12 mb-16" id="searchFilters" role="group" aria-label="Search filters">
+                    <div>
+                        <label for="searchDateFrom" class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">From</label>
+                        <input type="date" id="searchDateFrom" class="btn btn-secondary btn-sm"
+                            aria-label="Filter from date">
+                    </div>
+                    <div>
+                        <label for="searchDateTo" class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">To</label>
+                        <input type="date" id="searchDateTo" class="btn btn-secondary btn-sm"
+                            aria-label="Filter to date">
+                    </div>
+                    <div>
+                        <label for="searchStatusFilter" class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">Status</label>
+                        <select id="searchStatusFilter" class="btn btn-secondary btn-sm" aria-label="Filter by status">
+                            <option value="">All Statuses</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="escalated">Escalated</option>
+                            <option value="unknown_flagged">Unknown</option>
+                            <option value="open">Open</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="searchLanguageFilter" class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">Language</label>
+                        <select id="searchLanguageFilter" class="btn btn-secondary btn-sm"
+                            aria-label="Filter by language">
+                            <option value="">All Languages</option>
+                            <option value="nl">Dutch (NL)</option>
+                            <option value="en">English (EN)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div id="searchResults" aria-live="polite">
+                    <div class="empty-state" id="searchEmptyState">
+                        <div class="empty-state-icon" aria-hidden="true">&#128269;</div>
+                        <div class="empty-state-title">Search conversations</div>
+                        <div class="empty-state-text">Enter a search term to find conversations containing matching
+                            messages or notes.</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================
+                 EXPORT VIEW
+                 ======================================================== -->
+            <section class="portal-view" id="view-export" aria-label="Export">
+                <div class="view-header">
+                    <h2>Export</h2>
+                    <p>Export conversation data for analysis or backup.</p>
+                </div>
+
+                <div class="flex gap-16 mb-16 items-center" id="exportOptions" role="group" aria-label="Export options">
+                    <div>
+                        <span class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">Format</span>
+                        <div class="radio-group">
+                            <label class="radio-option"><input type="radio" name="exportFormat" value="json" checked>
+                                JSON</label>
+                            <label class="radio-option"><input type="radio" name="exportFormat" value="csv"> CSV</label>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="exportScopeSelect" class="text-muted"
+                            style="font-size: 12px; display: block; margin-bottom: 4px;">Scope</label>
+                        <select id="exportScopeSelect" class="btn btn-secondary" aria-label="Export scope">
+                            <option value="all">All Conversations</option>
+                            <option value="selected">Selected Only</option>
+                            <option value="labeled">Labeled Only</option>
+                        </select>
+                    </div>
+                    <div style="align-self: flex-end;">
+                        <button class="btn btn-primary" id="exportBtn">
+                            &#128230; Download Export
+                        </button>
+                    </div>
+                </div>
+
+                <div id="exportConversationSelector">
+                    <div class="mb-8 flex justify-between items-center">
+                        <span class="text-muted" style="font-size: 13px;" id="exportSelectionCount">0 conversations
+                            selected</span>
+                        <div class="flex gap-8">
+                            <button class="btn btn-sm btn-ghost" id="exportSelectAll">Select All</button>
+                            <button class="btn btn-sm btn-ghost" id="exportSelectNone">Select None</button>
+                        </div>
+                    </div>
+                    <div id="exportConversationList" class="flex flex-col gap-8" role="group"
+                        aria-label="Select conversations to export">
+                        <!-- Populated by JS: checkbox items for each conversation -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================
+                 SETTINGS VIEW
+                 ======================================================== -->
+            <section class="portal-view" id="view-settings" aria-label="Settings">
+                <div class="view-header">
+                    <h2>Settings</h2>
+                    <p>Configure portal preferences.</p>
+                </div>
+
+                <div style="max-width: 480px;">
+                    <!-- Theme Preference -->
+                    <div class="mb-24">
+                        <label for="settingTheme" class="labels-panel-title" style="display: block;">Theme</label>
+                        <select id="settingTheme" class="btn btn-secondary" aria-label="Theme preference">
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </div>
+
+                    <!-- Page Size -->
+                    <div class="mb-24">
+                        <label for="settingPageSize" class="labels-panel-title" style="display: block;">Conversations
+                            Per Page</label>
+                        <select id="settingPageSize" class="btn btn-secondary" aria-label="Conversations per page">
+                            <option value="10">10</option>
+                            <option value="20" selected>20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+
+                    <!-- Default Language Filter -->
+                    <div class="mb-24">
+                        <label for="settingLanguage" class="labels-panel-title" style="display: block;">Default Language
+                            Filter</label>
+                        <select id="settingLanguage" class="btn btn-secondary" aria-label="Default language filter">
+                            <option value="all">All Languages</option>
+                            <option value="nl">Dutch (NL)</option>
+                            <option value="en">English (EN)</option>
+                        </select>
+                    </div>
+
+                    <!-- Storage Usage -->
+                    <div class="mb-24">
+                        <div class="labels-panel-title">Storage Usage</div>
+                        <p class="text-muted" style="font-size: 13px;" id="storageUsageDisplay"
+                            data-setting="storage-usage">Calculating...</p>
+                    </div>
+
+                    <!-- Reset Data -->
+                    <div class="mb-24">
+                        <div class="labels-panel-title">Data Management</div>
+                        <button class="btn btn-danger" id="resetDataBtn">Reset All Data</button>
+                        <p class="text-muted mt-8" style="font-size: 12px;">This will clear all conversations, labels,
+                            and notes, then re-seed with sample data.</p>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- ================================================================
+         EXPORT MODAL
+         ================================================================ -->
+    <div class="modal-overlay" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="exportModalTitle">Export Conversations</h3>
+                <button class="modal-close" id="modalClose" aria-label="Close export dialog">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-section">
+                    <span class="modal-section-label">Format</span>
+                    <div class="radio-group">
+                        <label class="radio-option">
+                            <input type="radio" name="modalExportFormat" value="json" id="modalFormatJSON" checked>
+                            JSON
+                        </label>
+                        <label class="radio-option">
+                            <input type="radio" name="modalExportFormat" value="csv" id="modalFormatCSV">
+                            CSV
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-section">
+                    <span class="modal-section-label">Scope</span>
+                    <div class="checkbox-group">
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="modalScopeAll" checked>
+                            All conversations
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="modalScopeSelected">
+                            Selected conversations only
+                        </label>
+                        <label class="checkbox-option">
+                            <input type="checkbox" id="modalScopeLabeled">
+                            Labeled conversations only
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="exportModalCancel">Cancel</button>
+                <button class="btn btn-primary" id="modalExportBtn">&#128230; Export</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         TOAST CONTAINER
+         ================================================================ -->
+    <div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true">
+        <!-- Populated by JS: toast-notification elements -->
+    </div>
+
+    <!-- ================================================================
+         SCRIPTS
+         ================================================================ -->
+    <script src="/portal/js/storage.js"></script>
+    <script src="/portal/js/app.js"></script>
+
+</body>
+
+</html>

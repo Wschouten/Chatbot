@@ -115,11 +115,11 @@ function timeAgo(isoString) {
  */
 function statusBadgeClass(status) {
   switch (status) {
-    case 'resolved':       return 'badge-success';
-    case 'escalated':      return 'badge-danger';
+    case 'resolved': return 'badge-success';
+    case 'escalated': return 'badge-danger';
     case 'unknown_flagged': return 'badge-warning';
-    case 'open':           return 'badge-info';
-    default:               return 'badge-muted';
+    case 'open': return 'badge-info';
+    default: return 'badge-muted';
   }
 }
 
@@ -131,11 +131,11 @@ function statusBadgeClass(status) {
  */
 function statusLabel(status) {
   switch (status) {
-    case 'resolved':       return 'Resolved';
-    case 'escalated':      return 'Escalated';
+    case 'resolved': return 'Resolved';
+    case 'escalated': return 'Escalated';
     case 'unknown_flagged': return 'Unknown / Flagged';
-    case 'open':           return 'Open';
-    default:               return status || 'Unknown';
+    case 'open': return 'Open';
+    default: return status || 'Unknown';
   }
 }
 
@@ -147,11 +147,11 @@ function statusLabel(status) {
  */
 function statusIndicatorClass(status) {
   switch (status) {
-    case 'resolved':       return 'status-active';
-    case 'escalated':      return 'status-closed';
+    case 'resolved': return 'status-active';
+    case 'escalated': return 'status-closed';
     case 'unknown_flagged': return 'status-flagged';
-    case 'open':           return 'status-active';
-    default:               return '';
+    case 'open': return 'status-active';
+    default: return '';
   }
 }
 
@@ -213,7 +213,7 @@ class PortalApp {
     this._refreshLabelDefs();
 
     const auth = storageManager.getAuth();
-    if (auth.authenticated) {
+    if (auth.authenticated && auth.apiKey) {
       this._showPortal(auth.user);
     } else {
       this._showLogin();
@@ -272,6 +272,7 @@ class PortalApp {
 
   /**
    * Show the portal and hide the login overlay.
+   * Syncs real conversations from the backend API.
    *
    * @param {{ username: string, role: string }} user
    */
@@ -297,17 +298,26 @@ class PortalApp {
       this.currentFilters.language = settings.defaultLanguageFilter;
     }
 
-    // Navigate to default view
-    this.navigateTo('dashboard');
+    // Sync conversations from backend API, then navigate
+    storageManager.syncFromApi().then((result) => {
+      if (result.errors.length > 0) {
+        console.warn('Portal: sync had errors:', result.errors);
+      }
+      this.navigateTo('dashboard');
+    }).catch(() => {
+      // Still navigate even if sync fails (show cached data)
+      this.navigateTo('dashboard');
+    });
   }
 
   /**
    * Handle login form submission.
-   * Demo credentials: admin/admin, viewer/viewer, trainer/trainer.
+   * Authenticates against the backend API using the password as the ADMIN_API_KEY.
    */
-  handleLogin() {
+  async handleLogin() {
     const usernameInput = document.getElementById('loginUsername');
     const passwordInput = document.getElementById('loginPassword');
+    const loginBtn = document.getElementById('loginBtn');
     const username = (usernameInput ? usernameInput.value : '').trim();
     const password = passwordInput ? passwordInput.value : '';
 
@@ -316,23 +326,35 @@ class PortalApp {
       return;
     }
 
-    // Demo credential map
-    const validUsers = {
-      admin:   { password: 'admin',   role: 'admin' },
-      viewer:  { password: 'viewer',  role: 'viewer' },
-      trainer: { password: 'trainer', role: 'trainer' }
-    };
-
-    const entry = validUsers[username.toLowerCase()];
-    if (!entry || entry.password !== password) {
-      this._setLoginError('Invalid username or password.');
-      return;
+    // Disable button during validation
+    if (loginBtn) {
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in...';
     }
 
-    const user = { username: username.toLowerCase(), role: entry.role };
-    storageManager.setAuth(user);
-    this._showPortal(user);
-    this.showToast('Welcome back, ' + user.username + '!', 'success');
+    try {
+      // Validate the API key against the backend
+      const isValid = await storageManager.validateApiKey(password);
+
+      if (!isValid) {
+        this._setLoginError('Invalid username or password.');
+        return;
+      }
+
+      const user = { username: username.toLowerCase(), role: 'admin' };
+      storageManager.setAuth(user, password);
+      this._showPortal(user);
+      this.showToast('Welcome back, ' + user.username + '!', 'success');
+
+    } catch (e) {
+      console.error('Login error:', e);
+      this._setLoginError('Connection error. Is the backend running?');
+    } finally {
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Sign In';
+      }
+    }
   }
 
   /**
@@ -537,9 +559,9 @@ class PortalApp {
     if (result.conversations.length === 0) {
       listEl.innerHTML =
         '<div class="empty-state">' +
-          '<div class="empty-state-icon">&#128172;</div>' +
-          '<div class="empty-state-title">No conversations found</div>' +
-          '<div class="empty-state-text">Try adjusting your filters or search query.</div>' +
+        '<div class="empty-state-icon">&#128172;</div>' +
+        '<div class="empty-state-title">No conversations found</div>' +
+        '<div class="empty-state-text">Try adjusting your filters or search query.</div>' +
         '</div>';
     } else {
       let html = '';
@@ -573,20 +595,20 @@ class PortalApp {
         html +=
           '<div class="conversation-item' + (isActive ? ' active' : '') +
           '" data-id="' + escapeHtml(conv.id) + '">' +
-            '<div class="conversation-item-header">' +
-              '<span class="conversation-item-id">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
-              '<span class="conversation-item-date">' + escapeHtml(timeAgo(conv.startedAt)) + '</span>' +
-            '</div>' +
-            '<div class="conversation-item-preview">' + truncated + '</div>' +
-            '<div class="conversation-item-footer">' +
-              '<div class="conversation-item-meta">' +
-                '<span class="status-indicator ' + statusIndicatorClass(conv.status) + '"></span>' +
-                '<span class="badge ' + statusBadgeClass(conv.status) + '">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
-                '<span class="badge badge-muted">' + escapeHtml(langBadge) + '</span>' +
-                '<span class="message-count-badge">&#128172; ' + conv.messageCount + '</span>' +
-              '</div>' +
-              '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + labelChips + '</div>' +
-            '</div>' +
+          '<div class="conversation-item-header">' +
+          '<span class="conversation-item-id">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
+          '<span class="conversation-item-date">' + escapeHtml(timeAgo(conv.startedAt)) + '</span>' +
+          '</div>' +
+          '<div class="conversation-item-preview">' + truncated + '</div>' +
+          '<div class="conversation-item-footer">' +
+          '<div class="conversation-item-meta">' +
+          '<span class="status-indicator ' + statusIndicatorClass(conv.status) + '"></span>' +
+          '<span class="badge ' + statusBadgeClass(conv.status) + '">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
+          '<span class="badge badge-muted">' + escapeHtml(langBadge) + '</span>' +
+          '<span class="message-count-badge">&#128172; ' + conv.messageCount + '</span>' +
+          '</div>' +
+          '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + labelChips + '</div>' +
+          '</div>' +
           '</div>';
       }
       listEl.innerHTML = html;
@@ -809,10 +831,10 @@ class PortalApp {
 
       html +=
         '<div class="message-bubble ' + bubbleClass + '" data-message-id="' + escapeHtml(msg.id) + '">' +
-          '<div class="message-content"></div>' +
-          '<span class="message-timestamp">' + escapeHtml(formatTime(msg.timestamp)) + '</span>' +
-          '<span class="message-metadata-toggle" data-msg-id="' + escapeHtml(msg.id) + '">details &#9662;</span>' +
-          '<div class="message-metadata" id="meta-' + escapeHtml(msg.id) + '">' + metaHtml + '</div>' +
+        '<div class="message-content"></div>' +
+        '<span class="message-timestamp">' + escapeHtml(formatTime(msg.timestamp)) + '</span>' +
+        '<span class="message-metadata-toggle" data-msg-id="' + escapeHtml(msg.id) + '">details &#9662;</span>' +
+        '<div class="message-metadata" id="meta-' + escapeHtml(msg.id) + '">' + metaHtml + '</div>' +
         '</div>';
     }
 
@@ -866,9 +888,9 @@ class PortalApp {
       html +=
         '<span class="label-chip" style="background-color:' + escapeHtml(bgColor) +
         ';color:' + escapeHtml(textColor) + ';">' +
-          escapeHtml(label) +
-          '<span class="label-remove" data-conv-id="' + escapeHtml(conv.id) +
-          '" data-label="' + escapeHtml(label) + '">&times;</span>' +
+        escapeHtml(label) +
+        '<span class="label-remove" data-conv-id="' + escapeHtml(conv.id) +
+        '" data-label="' + escapeHtml(label) + '">&times;</span>' +
         '</span>';
     }
 
@@ -899,9 +921,9 @@ class PortalApp {
     for (const def of available) {
       html +=
         '<button class="add-label-menu-item" data-label="' + escapeHtml(def.name) + '">' +
-          '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:' +
-          escapeHtml(def.color) + ';margin-right:8px;"></span>' +
-          escapeHtml(def.name) +
+        '<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background-color:' +
+        escapeHtml(def.color) + ';margin-right:8px;"></span>' +
+        escapeHtml(def.name) +
         '</button>';
     }
     menu.innerHTML = html;
@@ -1025,14 +1047,14 @@ class PortalApp {
     for (const note of conv.notes) {
       html +=
         '<div class="note-item" style="padding:8px 12px;background-color:var(--portal-bg);border-radius:var(--portal-radius);margin-bottom:6px;">' +
-          '<div class="note-content" style="font-size:13px;line-height:1.5;margin-bottom:4px;"></div>' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;">' +
-            '<span style="font-size:11px;color:var(--portal-text-muted);">' +
-              escapeHtml(note.author) + ' &middot; ' + escapeHtml(timeAgo(note.createdAt)) +
-            '</span>' +
-            '<button class="btn btn-ghost btn-sm note-delete-btn" data-note-id="' +
-            escapeHtml(note.id) + '" data-conv-id="' + escapeHtml(conv.id) + '">&times;</button>' +
-          '</div>' +
+        '<div class="note-content" style="font-size:13px;line-height:1.5;margin-bottom:4px;"></div>' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-size:11px;color:var(--portal-text-muted);">' +
+        escapeHtml(note.author) + ' &middot; ' + escapeHtml(timeAgo(note.createdAt)) +
+        '</span>' +
+        '<button class="btn btn-ghost btn-sm note-delete-btn" data-note-id="' +
+        escapeHtml(note.id) + '" data-conv-id="' + escapeHtml(conv.id) + '">&times;</button>' +
+        '</div>' +
         '</div>';
     }
 
@@ -1105,9 +1127,9 @@ class PortalApp {
     if (!query || !query.trim()) {
       container.innerHTML =
         '<div class="empty-state">' +
-          '<div class="empty-state-icon">&#128269;</div>' +
-          '<div class="empty-state-title">Search conversations</div>' +
-          '<div class="empty-state-text">Enter a search term to find matching messages, notes, and labels.</div>' +
+        '<div class="empty-state-icon">&#128269;</div>' +
+        '<div class="empty-state-title">Search conversations</div>' +
+        '<div class="empty-state-text">Enter a search term to find matching messages, notes, and labels.</div>' +
         '</div>';
       return;
     }
@@ -1138,9 +1160,9 @@ class PortalApp {
     if (results.length === 0) {
       container.innerHTML =
         '<div class="empty-state">' +
-          '<div class="empty-state-icon">&#128533;</div>' +
-          '<div class="empty-state-title">No results</div>' +
-          '<div class="empty-state-text">No conversations match "' + escapeHtml(query.trim()) + '". Try a different term.</div>' +
+        '<div class="empty-state-icon">&#128533;</div>' +
+        '<div class="empty-state-title">No results</div>' +
+        '<div class="empty-state-text">No conversations match "' + escapeHtml(query.trim()) + '". Try a different term.</div>' +
         '</div>';
       return;
     }
@@ -1154,24 +1176,24 @@ class PortalApp {
       html +=
         '<div class="search-result-card" data-id="' + escapeHtml(conv.id) +
         '" style="padding:14px 16px;background-color:var(--portal-surface);border:1px solid var(--portal-border);border-radius:var(--portal-radius-lg);margin-bottom:10px;cursor:pointer;transition:box-shadow 0.2s ease;">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
-            '<span style="font-weight:600;font-size:13px;">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
-            '<div style="display:flex;gap:6px;">' +
-              '<span class="badge ' + statusBadgeClass(conv.status) + '">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
-              '<span class="badge badge-muted">' + escapeHtml(conv.language.toUpperCase()) + '</span>' +
-            '</div>' +
-          '</div>' +
-          '<div style="font-size:12px;color:var(--portal-text-muted);margin-bottom:8px;">' +
-            escapeHtml(formatDateTime(conv.startedAt)) + ' &middot; ' + conv.messageCount + ' messages' +
-          '</div>';
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+        '<span style="font-weight:600;font-size:13px;">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
+        '<div style="display:flex;gap:6px;">' +
+        '<span class="badge ' + statusBadgeClass(conv.status) + '">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
+        '<span class="badge badge-muted">' + escapeHtml(conv.language.toUpperCase()) + '</span>' +
+        '</div>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--portal-text-muted);margin-bottom:8px;">' +
+        escapeHtml(formatDateTime(conv.startedAt)) + ' &middot; ' + conv.messageCount + ' messages' +
+        '</div>';
 
       // Render matching snippets
       for (const match of result.matches) {
         const roleIcon = match.role === 'user' ? '&#128100;' : match.role === 'bot' ? '&#129302;' : '&#128221;';
         html +=
           '<div style="padding:6px 10px;background-color:var(--portal-bg);border-radius:var(--portal-radius);margin-bottom:4px;font-size:12px;line-height:1.5;">' +
-            '<span style="margin-right:6px;">' + roleIcon + '</span>' +
-            '<span class="search-snippet"></span>' +
+          '<span style="margin-right:6px;">' + roleIcon + '</span>' +
+          '<span class="search-snippet"></span>' +
           '</div>';
       }
 
@@ -1218,7 +1240,7 @@ class PortalApp {
 
     let html =
       '<label class="checkbox-option" style="padding:8px 0;border-bottom:1px solid var(--portal-border);font-weight:600;">' +
-        '<input type="checkbox" id="exportSelectAllCb"> Select All (' + result.total + ' conversations)' +
+      '<input type="checkbox" id="exportSelectAllCb"> Select All (' + result.total + ' conversations)' +
       '</label>';
 
     for (const conv of result.conversations) {
@@ -1227,12 +1249,12 @@ class PortalApp {
 
       html +=
         '<label class="checkbox-option" style="padding:6px 0;">' +
-          '<input type="checkbox" class="export-conv-checkbox" value="' + escapeHtml(conv.id) + '">' +
-          '<span style="flex:1;">' +
-            '<span style="font-weight:500;font-size:12px;">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
-            '<span style="color:var(--portal-text-muted);font-size:11px;margin-left:8px;" class="export-preview"></span>' +
-          '</span>' +
-          '<span class="badge ' + statusBadgeClass(conv.status) + '" style="font-size:10px;">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
+        '<input type="checkbox" class="export-conv-checkbox" value="' + escapeHtml(conv.id) + '">' +
+        '<span style="flex:1;">' +
+        '<span style="font-weight:500;font-size:12px;">' + escapeHtml(conv.id.substring(0, 13)) + '</span>' +
+        '<span style="color:var(--portal-text-muted);font-size:11px;margin-left:8px;" class="export-preview"></span>' +
+        '</span>' +
+        '<span class="badge ' + statusBadgeClass(conv.status) + '" style="font-size:10px;">' + escapeHtml(statusLabel(conv.status)) + '</span>' +
         '</label>';
     }
 
@@ -1386,8 +1408,8 @@ class PortalApp {
    */
   _handleResetData() {
     const confirmed = window.confirm(
-      'This will reset all conversations, labels, notes, and ratings to the default seed data. ' +
-      'Your settings will also be reset. This cannot be undone.\n\nAre you sure?'
+      'This will reset all labels, notes, and ratings. ' +
+      'Conversations will be re-synced from the backend. This cannot be undone.\n\nAre you sure?'
     );
     if (!confirmed) return;
 
@@ -1397,8 +1419,14 @@ class PortalApp {
     this.currentFilters = {};
     this._refreshLabelDefs();
     this._applyTheme();
-    this.showToast('All data has been reset to defaults.', 'info');
+    this.showToast('Data reset. Re-syncing conversations...', 'info');
     this._renderSettings();
+
+    // Re-sync conversations from the backend API
+    storageManager.syncFromApi().then(() => {
+      this.navigateTo('dashboard');
+      this.showToast('Conversations synced from backend.', 'success');
+    });
   }
 
   /* ────────────────────────────────────────────────────────────────

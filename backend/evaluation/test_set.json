@@ -166,5 +166,288 @@
     "expected_answer_keywords": ["drainage", "water", "pots", "clay", "roots"],
     "category": "english",
     "expect_unknown": false
+  },
+  {
+    "question": "en de prijs?",
+    "chat_history": [
+      {"role": "user", "content": "Wat is houtmulch?"},
+      {"role": "assistant", "content": "Houtmulch is een bodembedekker gemaakt van fijn gemalen hout."}
+    ],
+    "expected_answer_keywords": ["houtmulch", "prijs"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "hoe dik moet ik dat leggen?",
+    "chat_history": [
+      {"role": "user", "content": "Wat is Franse boomschors?"},
+      {"role": "assistant", "content": "Franse boomschors is een grove, duurzame bodembedekker van pijnboomschors."}
+    ],
+    "expected_answer_keywords": ["boomschors", "cm", "laag"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "en voor slakken?",
+    "chat_history": [
+      {"role": "user", "content": "Waarvoor kan ik schapenwol gebruiken?"},
+      {"role": "assistant", "content": "Schapenwol is een natuurlijke bodembedekker die goed isoleert tegen vorst."}
+    ],
+    "expected_answer_keywords": ["schapenwol", "slakken"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "welke kleuren hebben jullie?",
+    "chat_history": [
+      {"role": "user", "content": "Ik zoek houtsnippers voor mijn tuin"},
+      {"role": "assistant", "content": "Houtsnippers zijn ideaal als bodembedekker. Ze houden vocht vast en remmen onkruid."}
+    ],
+    "expected_answer_keywords": ["houtsnippers", "kleur"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "and what about pricing?",
+    "chat_history": [
+      {"role": "user", "content": "What types of bark mulch do you have?"},
+      {"role": "assistant", "content": "We have French bark mulch and pine bark. French bark is coarser and lasts longer."}
+    ],
+    "expected_answer_keywords": ["bark", "mulch"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "Wat is aanmaakhout en hoe gebruik ik het?",
+    "expected_answer_keywords": ["aanmaakhout", "haard", "houtkachel", "naaldhout", "aansteken"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat zijn aanmaakkrullen?",
+    "expected_answer_keywords": ["aanmaakkrullen", "houtwol", "plantaardige was", "natuurlijk", "aansteken"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat voor haardhout verkopen jullie?",
+    "expected_answer_keywords": ["eiken", "haardhout", "gedroogd", "vocht", "hardhou"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is anti-worteldoek en wanneer heb ik dat nodig?",
+    "expected_answer_keywords": ["worteldoek", "onkruid", "licht", "waterdoorlatend", "bodembedekking"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hebben jullie veenvrije potgrond?",
+    "expected_answer_keywords": ["veenvrij", "potgrond", "duurzaam", "kokos", "compost"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is houtmulch en hoe verschilt het van houtsnippers?",
+    "expected_answer_keywords": ["houtmulch", "fijn", "dennenschors", "bodembedekker", "verteert"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Waarvoor kan ik hennepvezel bodembedekking gebruiken?",
+    "expected_answer_keywords": ["hennep", "natuurlijk", "biologisch", "afbreekbaar", "onkruid", "erosie"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is Speelmix en is het veilig voor kinderen?",
+    "expected_answer_keywords": ["speelmix", "veilig", "valbrekend", "NEN", "gecertificeerd", "speeltoestellen"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoe dik moet ik Speelmix leggen onder een schommel?",
+    "expected_answer_keywords": ["20 cm", "speelmix", "valhoogte", "3 meter", "inklinken"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is Recy-Edge en hoe verschilt het van Ekoboard?",
+    "expected_answer_keywords": ["Recy-Edge", "Ekoboard", "flexibel", "dunner", "bochten", "gerecycled"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat zijn gronddoekpennen en welke soorten zijn er?",
+    "expected_answer_keywords": ["gronddoekpennen", "kunststof", "staal", "biologisch afbreekbaar", "vastzetten"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hebben jullie tuinstapstenen?",
+    "expected_answer_keywords": ["stapstenen", "kunststof", "antislip", "tuin", "pad"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+  {
+    "question": "Wat is het verschil tussen bemeste en onbemeste tuinaarde?",
+    "expected_answer_keywords": ["bemest", "onbemest", "voeding", "planten", "ophogen", "tuinaarde"],
+    "category": "product_info",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "Leveren jullie ook op vakantie- en bungalowparken?",
+    "expected_answer_keywords": ["ja", "vakantiepark", "bungalowpark", "bereikbaar", "vrachtwagen"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Kan ik bestellen voor mijn volkstuin?",
+    "expected_answer_keywords": ["ja", "volkstuin", "adres", "officieel", "GPS"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Kan de pallet ook boven gebracht worden?",
+    "expected_answer_keywords": ["nee", "verdieping", "begane grond", "pallet", "niet"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+  {
+    "question": "Is jullie potgrond SKAL-gecertificeerd?",
+    "expected_answer_keywords": ["SKAL", "certificering", "biologisch", "particulier", "niet nodig"],
+    "category": "faq_policy",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "Ik wil een moestuin aanleggen, welke grond heb ik nodig?",
+    "expected_answer_keywords": ["moestuin", "potgrond", "biologisch", "groenten", "voeding"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Ik zoek een duurzame oplossing voor bodembedekking, wat raden jullie aan?",
+    "expected_answer_keywords": ["veenvrij", "hennep", "schapenwol", "biologisch", "duurzaam", "natuurlijk"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Ik wil een vijverrand afwerken, welke borderrand is het beste?",
+    "expected_answer_keywords": ["Ecolat", "vijver", "stijf", "waterbestendig", "stabiel"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+  {
+    "question": "Hoe maak ik een veilige speelplek voor mijn kinderen in de tuin?",
+    "expected_answer_keywords": ["speelmix", "houtsnippers", "valbrekend", "laag", "gecertificeerd", "NEN"],
+    "category": "cross_product",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "Verkopen jullie ook tuingereedschap?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "Kunnen jullie de bodembedekking ook komen leggen?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+  {
+    "question": "Hebben jullie ook graszaad?",
+    "expected_answer_keywords": [],
+    "category": "hallucination_check",
+    "expect_unknown": true
+  },
+
+  {
+    "question": "Do you have peat-free potting soil options?",
+    "expected_answer_keywords": ["peat-free", "sustainable", "coconut", "compost", "organic"],
+    "category": "english",
+    "expect_unknown": false
+  },
+  {
+    "question": "What is the best ground cover for a playground?",
+    "expected_answer_keywords": ["play", "safety", "certified", "wood chips", "fall"],
+    "category": "english",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "kan ik dat ook voor een vijver gebruiken?",
+    "chat_history": [
+      {"role": "user", "content": "Wat is Ecolat?"},
+      {"role": "assistant", "content": "Ecolat is een stijve kunststof borderrand, ideaal voor het afbakenen van borders en paden."}
+    ],
+    "expected_answer_keywords": ["Ecolat", "vijver", "waterbestendig"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "en welke paaltjes heb ik daarbij nodig?",
+    "chat_history": [
+      {"role": "user", "content": "Ik wil Ekoboard gebruiken voor mijn border"},
+      {"role": "assistant", "content": "Ekoboard is een flexibele borderrand van gerecycled kunststof, perfect voor ronde vormen."}
+    ],
+    "expected_answer_keywords": ["paaltjes", "kunststof", "40", "50 cm"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+  {
+    "question": "is dat ook geschikt voor mijn moestuin?",
+    "chat_history": [
+      {"role": "user", "content": "Wat is veenvrije potgrond?"},
+      {"role": "assistant", "content": "Veenvrije potgrond is een duurzame potgrond zonder veen, gemaakt van hernieuwbare materialen."}
+    ],
+    "expected_answer_keywords": ["moestuin", "veenvrij", "groenten"],
+    "category": "follow_up",
+    "expect_unknown": false
+  },
+
+  {
+    "question": "Where is my order 12345?",
+    "expected_answer_keywords": ["bestelling", "12345", "status opvragen"],
+    "expected_intent": "shipping_lookup",
+    "category": "shipping",
+    "expect_unknown": false,
+    "notes": "Should trigger order detection and confirmation flow"
+  },
+  {
+    "question": "Waar is bestelling #98765?",
+    "expected_answer_keywords": ["bestelling", "98765", "status opvragen"],
+    "expected_intent": "shipping_lookup",
+    "category": "shipping",
+    "expect_unknown": false,
+    "notes": "Dutch order query - should trigger confirmation"
+  },
+  {
+    "question": "Order 54321 status?",
+    "expected_answer_keywords": ["bestelling", "54321", "status opvragen"],
+    "expected_intent": "shipping_lookup",
+    "category": "shipping",
+    "expect_unknown": false,
+    "notes": "Short form order query - should trigger confirmation"
+  },
+  {
+    "question": "Waar is mijn pakket?",
+    "expected_answer_keywords": [],
+    "expected_intent": "rag_general",
+    "category": "shipping",
+    "expect_unknown": false,
+    "notes": "No order number - should go to RAG (general delivery info)"
+  },
+  {
+    "question": "Hoe lang duurt de levering?",
+    "expected_answer_keywords": ["levering", "werkdagen", "Nederland", "België"],
+    "expected_intent": "rag_delivery_info",
+    "category": "shipping",
+    "expect_unknown": false,
+    "notes": "General delivery question - should go to RAG"
   }
 ]
