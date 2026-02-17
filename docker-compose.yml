@@ -20,7 +20,10 @@ services:
       - sessions_data:/app/backend/sessions
       # Logs directory with proper permissions
       - logs_data:/app/backend/logs
+      # Portal SQLite database (Feature 30g)
+      - portal_data:/app/backend/data
 
 volumes:
   sessions_data:
   logs_data:
+  portal_data:

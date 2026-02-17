@@ -24,10 +24,10 @@ COPY . /app
 # SECURITY: Set proper ownership and permissions
 # =============================================================================
 RUN chown -R appuser:appgroup /app && \
-    mkdir -p /app/backend/sessions /app/backend/logs /app/backend/chroma_db && \
-    chown -R appuser:appgroup /app/backend/sessions /app/backend/logs /app/backend/chroma_db
+    mkdir -p /app/backend/sessions /app/backend/logs /app/backend/chroma_db /app/backend/data && \
+    chown -R appuser:appgroup /app/backend/sessions /app/backend/logs /app/backend/chroma_db /app/backend/data
 
-RUN chmod 700 /app/backend/sessions /app/backend/logs
+RUN chmod 700 /app/backend/sessions /app/backend/logs /app/backend/data
 
 # Set environment variable for Flask
 ENV FLASK_APP=backend/app.py

@@ -6,6 +6,7 @@ import json
 import datetime
 import secrets
 import uuid
+from functools import wraps
 from typing import Any
 
 from flask import Flask, render_template, request, jsonify, Response, g, send_from_directory
@@ -20,6 +21,7 @@ from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
+import admin_db
 from pathlib import Path
 
 
@@ -156,6 +158,31 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
+# =============================================================================
+# SECURITY: Reusable Admin Auth Decorator (Feature 30b)
+# =============================================================================
+def require_admin_key(f):
+    """Decorator to require X-Admin-Key header for admin routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        admin_key = os.environ.get("ADMIN_API_KEY")
+        provided_key = request.headers.get("X-Admin-Key")
+
+        if not admin_key:
+            logger.warning("ADMIN_API_KEY not configured - admin API is disabled")
+            return jsonify({"error": "Admin API not configured"}), 500
+
+        if not provided_key or not secrets.compare_digest(provided_key, admin_key):
+            logger.warning(
+                "Unauthorized admin access attempt from %s on %s",
+                request.remote_addr, request.path,
+            )
+            return jsonify({"error": "Unauthorized"}), 401
+
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 # Email validation regex (RFC 5322 simplified)
 EMAIL_REGEX = re.compile(
     r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -163,6 +190,9 @@ EMAIL_REGEX = re.compile(
 
 # Constants
 MAX_MESSAGE_LENGTH = 1000
+VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
+LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
+HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
 
 # Initialize RAG Engine
 rag_engine = RagEngine()
@@ -188,6 +218,11 @@ run_data_retention_cleanup(
     sessions_retention_days=int(os.getenv("DATA_RETENTION_SESSIONS_DAYS", "30")),
     logs_retention_days=int(os.getenv("DATA_RETENTION_LOGS_DAYS", "90"))
 )
+
+# =============================================================================
+# Portal DB: Initialize SQLite and register teardown (Feature 30a)
+# =============================================================================
+admin_db.init_db(app)
 
 @app.before_request
 def assign_request_id() -> None:
@@ -377,24 +412,53 @@ def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
     """Format shipping API result into user-friendly Dutch message."""
     status = result["status"]
     details = result.get("details", {})
+    desc = details.get("status_description", "")
 
-    if status == "in_transit":
-        location = details.get("location", "onbekend")
-        delivery = details.get("estimated_delivery", "")
-        return f"✅ Je bestelling **#{order_id}** is onderweg!\n\n📍 Huidige locatie: {location}\n📅 Verwachte levering: {delivery}"
+    # Build the main status message
+    if status == "delivered":
+        date = details.get("date", "")
+        time = details.get("time", "")
+        msg = f"✅ Je zending **#{order_id}** is afgeleverd"
+        if date:
+            msg += f" op {date}"
+        if time:
+            msg += f" om {time}"
+        msg += "! 🎉"
 
-    elif status == "delivered":
-        delivered_date = details.get("delivered_date", "")
-        return f"✅ Je bestelling **#{order_id}** is afgeleverd op {delivered_date}! 🎉"
+    elif status == "in_transit":
+        msg = f"🚚 Je zending **#{order_id}** is onderweg!"
+        if desc:
+            msg += f"\n\n📋 Status: {desc}"
+        date = details.get("date", "")
+        time = details.get("time", "")
+        if date and time:
+            msg += f"\n🕐 Laatste update: {date} om {time}"
 
-    elif status == "pending":
-        return f"📦 Bestelling **#{order_id}** is nog in behandeling. We sturen je een trackingcode zodra het pakket verzonden is."
-
-    elif status == "out_for_delivery":
-        return f"🚚 Je bestelling **#{order_id}** is vandaag onderweg naar jou!"
+    elif status == "at_depot":
+        msg = f"📦 Je zending **#{order_id}** is bij het depot."
+        if desc:
+            msg += f"\n\n📋 Status: {desc}"
 
     else:
-        return f"📦 Status bestelling **#{order_id}**: {status}"
+        msg = f"📦 Status zending **#{order_id}**: {desc or status}"
+
+    # Add ETA if available
+    eta_from = details.get("eta_from", "")
+    eta_until = details.get("eta_until", "")
+    if eta_from and eta_until:
+        msg += f"\n\n⏰ Verwachte levering: tussen {eta_from} en {eta_until}"
+
+    # Add Track & Trace link if available
+    tracking_url = details.get("tracking_url", "")
+    if tracking_url:
+        msg += f"\n\n🔗 [Volg je zending hier]({tracking_url})"
+
+    # Add note if present
+    note = details.get("note", "")
+    if note:
+        msg += f"\n\n💬 Opmerking: {note}"
+
+    return msg
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -573,8 +637,9 @@ def chat() -> Response:
                     response_text = "Oké, geen probleem! Wat is je correcte bestelnummer?"
                     return jsonify({"response": response_text, "request_id": request_id})
 
-    # Detect potential order number in message (English: order, Dutch: bestelling)
-    order_match = re.search(r'(?:order|bestelling)\s*#?\s*(\d+)', user_message.lower())
+    # Detect potential order/zending number in message
+    # Supports: order, bestelling, bestellingnummer, zending, zendingnummer
+    order_match = re.search(r'(?:order|bestelling(?:nummer)?|zending(?:nummer)?)\s*#?\s*(\d+)', user_message.lower())
 
     if order_match:
         order_id = order_match.group(1)
@@ -586,7 +651,7 @@ def chat() -> Response:
         save_session_state(session_id, state_data)
 
         # Ask for confirmation
-        response_text = f"Wil je de status opvragen van bestelling **#{order_id}**? (Antwoord met 'ja' of 'nee')"
+        response_text = f"Wil je de status opvragen van zending **#{order_id}**? (Antwoord met 'ja' of 'nee')"
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Feature 15: Detect language BEFORE RAG call so we can translate queries
@@ -671,21 +736,9 @@ def chat() -> Response:
     return jsonify({"response": response_text, "request_id": request_id})
 
 @app.route('/api/ingest', methods=['POST'])
+@require_admin_key
 def ingest():
     """Endpoint to trigger re-ingestion of documents (requires admin API key)."""
-    # Check for admin API key
-    admin_key = os.environ.get('ADMIN_API_KEY')
-    provided_key = request.headers.get('X-Admin-Key')
-
-    if not admin_key:
-        logger.warning("ADMIN_API_KEY not configured - /api/ingest is disabled")
-        return jsonify({"error": "Endpoint not configured"}), 503
-
-    # Use constant-time comparison to prevent timing attacks
-    if not provided_key or not secrets.compare_digest(provided_key, admin_key):
-        logger.warning("Unauthorized /api/ingest attempt from %s", get_remote_address())
-        return jsonify({"error": "Unauthorized"}), 401
-
     result = rag_engine.ingest_documents()
     logger.info("Document re-ingestion triggered successfully")
     return jsonify({"status": result})
@@ -711,19 +764,9 @@ def serve_portal_static(filename):
 
 @app.route('/admin/api/conversations', methods=['GET'])
 @limiter.limit("30 per minute")
+@require_admin_key
 def admin_conversations():
     """Return all chat log files for the admin portal (requires ADMIN_API_KEY)."""
-    admin_key = os.environ.get('ADMIN_API_KEY')
-    provided_key = request.headers.get('X-Admin-Key')
-
-    if not admin_key:
-        logger.warning("ADMIN_API_KEY not configured - admin API is disabled")
-        return jsonify({"error": "Endpoint not configured"}), 503
-
-    if not provided_key or not secrets.compare_digest(provided_key, admin_key):
-        logger.warning("Unauthorized /admin/api/conversations attempt from %s", get_remote_address())
-        return jsonify({"error": "Unauthorized"}), 401
-
     log_dir = "logs"
     conversations = []
 
@@ -759,8 +802,478 @@ def admin_conversations():
             logger.warning("Skipping corrupt log file %s: %s", filename, e)
 
     # Sort newest-first by last message timestamp
-    conversations.sort(key=lambda c: c.get("lastMessage", ""), reverse=True)
+    conversations.sort(
+        key=lambda c: c.get("lastMessage", ""), reverse=True
+    )
+
+    # Feature 30d: Overlay persistent metadata from SQLite database
+    try:
+        metadata_list = admin_db.get_all_metadata()
+        metadata_map = {m["session_id"]: m for m in metadata_list}
+    except Exception as e:
+        logger.error("Failed to load portal metadata: %s", e)
+        metadata_map = {}
+
+    default_meta = {
+        "status": "open",
+        "rating": None,
+        "language": None,
+        "labels": [],
+        "notes": [],
+        "messageMetadata": {},
+    }
+    for conv in conversations:
+        sid = conv.get("id")
+        if sid and sid in metadata_map:
+            meta = metadata_map[sid]
+            conv["metadata"] = {
+                "status": meta.get("status", "open"),
+                "rating": meta.get("rating"),
+                "language": meta.get("language"),
+                "labels": meta.get("labels", []),
+                "notes": meta.get("notes", []),
+                "messageMetadata": meta.get("messageMetadata", {}),
+            }
+        else:
+            conv["metadata"] = dict(default_meta)
+
     return jsonify({"conversations": conversations})
+
+
+@app.route('/admin/api/conversations/<session_id>', methods=['GET'])
+@limiter.limit("30 per minute")
+@require_admin_key
+def get_single_conversation(session_id):
+    """
+    GET /admin/api/conversations/<session_id>
+
+    Fetch a single conversation with its messages and metadata.
+    More efficient than fetching all conversations.
+
+    Returns:
+        200: Conversation object with messages and metadata
+        400: Invalid session ID format
+        404: Conversation not found
+    """
+    # Step 1: Sanitize and validate session ID
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    # Step 2: Load chat log file
+    log_path = os.path.join("logs", f"chat_{safe_id}.json")
+    if not os.path.exists(log_path):
+        return jsonify({"error": "Conversation not found"}), 404
+
+    try:
+        with open(log_path, 'r', encoding='utf-8') as f:
+            entries = json.load(f)
+    except (json.JSONDecodeError, IOError) as e:
+        logger.error("Failed to load conversation %s: %s", safe_id, e)
+        return jsonify({"error": "Failed to load conversation"}), 500
+
+    if not entries:
+        return jsonify({"error": "Conversation is empty"}), 404
+
+    # Step 3: Build conversation object
+    conversation = {
+        "id": safe_id,
+        "started": entries[0].get("timestamp", ""),
+        "lastMessage": entries[-1].get("timestamp", ""),
+        "messageCount": len(entries),
+        "messages": [
+            {
+                "timestamp": e.get("timestamp", ""),
+                "user": e.get("user", ""),
+                "bot": e.get("bot", "")
+            }
+            for e in entries
+        ]
+    }
+
+    # Step 4: Overlay metadata from database
+    try:
+        metadata = admin_db.get_metadata(safe_id)
+        if metadata:
+            conversation["metadata"] = {
+                "status": metadata.get("status", "open"),
+                "rating": metadata.get("rating"),
+                "language": metadata.get("language"),
+                "labels": metadata.get("labels", []),
+                "notes": metadata.get("notes", []),
+            }
+        else:
+            # No metadata exists yet - use defaults
+            conversation["metadata"] = {
+                "status": "open",
+                "rating": None,
+                "language": None,
+                "labels": [],
+                "notes": [],
+            }
+    except Exception as e:
+        logger.error("Failed to load metadata for %s: %s", safe_id, e)
+        # Return conversation without metadata rather than failing entirely
+        conversation["metadata"] = {
+            "status": "open",
+            "rating": None,
+            "language": None,
+            "labels": [],
+            "notes": [],
+        }
+
+    return jsonify(conversation), 200
+
+
+# =============================================================================
+# ADMIN: Metadata CRUD API Routes (Feature 30c)
+# =============================================================================
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>/metadata", methods=["PUT"]
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def update_conversation_metadata(session_id):
+    """Update conversation status, rating, or language."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    # Validate individual fields (only those present in the request body)
+    if "status" in data and data["status"] is not None:
+        if data["status"] not in VALID_STATUSES:
+            return jsonify({
+                "error": "Invalid status. Must be one of: "
+                         + ", ".join(sorted(VALID_STATUSES)),
+                "field": "status",
+            }), 400
+
+    if "rating" in data and data["rating"] is not None:
+        if not isinstance(data["rating"], int) or data["rating"] < 1 or data["rating"] > 5:
+            return jsonify({
+                "error": "Rating must be null or an integer between 1 and 5",
+                "field": "rating",
+            }), 400
+
+    # Build kwargs: only pass keys that are present in the request body
+    # so that omitted keys stay unchanged, while explicit null clears the value
+    kwargs = {}
+    if "status" in data:
+        kwargs["status"] = data["status"]
+    if "rating" in data:
+        kwargs["rating"] = data["rating"]
+    if "language" in data:
+        kwargs["language"] = data["language"]
+
+    try:
+        result = admin_db.upsert_metadata(safe_id, **kwargs)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error("Failed to update metadata for %s: %s", safe_id, e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>/labels", methods=["POST"]
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def add_conversation_label_route(session_id):
+    """Add a label to a conversation."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    label_name = data.get("label_name", "").strip()
+    if (not label_name or len(label_name) > 50
+            or not LABEL_NAME_RE.match(label_name)):
+        return jsonify({
+            "error": "Invalid label name. "
+                     "Must be 1-50 alphanumeric characters or hyphens.",
+            "field": "label_name",
+        }), 400
+
+    try:
+        success = admin_db.add_conversation_label(safe_id, label_name)
+        if success:
+            return jsonify({"success": True}), 200
+        return jsonify({
+            "error": "Label already exists on this conversation"
+        }), 409
+    except Exception as e:
+        logger.error("Failed to add label for %s: %s", safe_id, e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>/labels/<label_name>",
+    methods=["DELETE"],
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def remove_conversation_label_route(session_id, label_name):
+    """Remove a label from a conversation."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    try:
+        success = admin_db.remove_conversation_label(
+            safe_id, label_name
+        )
+        if success:
+            return jsonify({"success": True}), 200
+        return jsonify({
+            "error": "Label not found on this conversation"
+        }), 404
+    except Exception as e:
+        logger.error(
+            "Failed to remove label for %s: %s", safe_id, e
+        )
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>/notes", methods=["POST"]
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def add_conversation_note(session_id):
+    """Add a note to a conversation."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    text = data.get("text", "").strip()
+    author = data.get("author", "admin").strip()
+
+    if not author or len(author) > 100:
+        return jsonify({
+            "error": "Author must be 1-100 characters",
+            "field": "author",
+        }), 400
+
+    if not text or len(text) > 2000:
+        return jsonify({
+            "error": "Note text must be 1-2000 characters",
+            "field": "text",
+        }), 400
+
+    try:
+        note_id = admin_db.add_note(safe_id, text, author)
+        return jsonify({"note_id": note_id}), 201
+    except Exception as e:
+        logger.error("Failed to add note for %s: %s", safe_id, e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>/notes/<note_id>",
+    methods=["DELETE"],
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def delete_conversation_note(session_id, note_id):
+    """Delete a note from a conversation."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+
+    try:
+        success = admin_db.delete_note(note_id)
+        if success:
+            return jsonify({"success": True}), 200
+        return jsonify({"error": "Note not found"}), 404
+    except Exception as e:
+        logger.error("Failed to delete note %s: %s", note_id, e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>"
+    "/messages/<message_id>/labels",
+    methods=["POST"],
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def add_message_label_route(session_id, message_id):
+    """Add a label to a specific message."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+    message_id = sanitize_session_id(message_id)
+    if not message_id:
+        return jsonify({"error": "Invalid message ID"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    label_name = data.get("label_name", "").strip()
+    if (not label_name or len(label_name) > 50
+            or not LABEL_NAME_RE.match(label_name)):
+        return jsonify({
+            "error": "Invalid label name",
+            "field": "label_name",
+        }), 400
+
+    try:
+        row_id = admin_db.add_message_label(
+            safe_id, message_id, label_name
+        )
+        return jsonify({"id": row_id}), 200
+    except Exception as e:
+        logger.error("Failed to add message label: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>"
+    "/messages/<message_id>/labels/<label_name>",
+    methods=["DELETE"],
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def remove_message_label_route(session_id, message_id, label_name):
+    """Remove a label from a specific message."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+    message_id = sanitize_session_id(message_id)
+    if not message_id:
+        return jsonify({"error": "Invalid message ID"}), 400
+
+    try:
+        success = admin_db.remove_message_label(
+            safe_id, message_id, label_name
+        )
+        if success:
+            return jsonify({"success": True}), 200
+        return jsonify({"error": "Message label not found"}), 404
+    except Exception as e:
+        logger.error("Failed to remove message label: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route(
+    "/admin/api/conversations/<session_id>"
+    "/messages/<message_id>/rating",
+    methods=["PUT"],
+)
+@limiter.limit("30 per minute")
+@require_admin_key
+def set_message_rating_route(session_id, message_id):
+    """Set rating for a specific message (1-5 or null)."""
+    safe_id = sanitize_session_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Invalid session ID"}), 400
+    message_id = sanitize_session_id(message_id)
+    if not message_id:
+        return jsonify({"error": "Invalid message ID"}), 400
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    rating = data.get("rating")
+    if rating is not None:
+        if not isinstance(rating, int) or rating < 1 or rating > 5:
+            return jsonify({
+                "error": "Rating must be null or integer 1-5",
+                "field": "rating",
+            }), 400
+
+    try:
+        admin_db.set_message_rating(safe_id, message_id, rating)
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        logger.error("Failed to set message rating: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/admin/api/labels", methods=["GET"])
+@limiter.limit("30 per minute")
+@require_admin_key
+def get_label_definitions_route():
+    """Get all label definitions."""
+    try:
+        labels = admin_db.get_label_definitions()
+        return jsonify(labels), 200
+    except Exception as e:
+        logger.error("Failed to get label definitions: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/admin/api/labels", methods=["POST"])
+@limiter.limit("30 per minute")
+@require_admin_key
+def create_label_definition():
+    """Create a new label definition."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Request body required"}), 400
+
+    name = data.get("name", "").strip()
+    color = data.get("color", "#94A3B8").strip()
+    description = data.get("description", "").strip()
+
+    if (not name or len(name) > 50
+            or not LABEL_NAME_RE.match(name)):
+        return jsonify({
+            "error": "Invalid label name. "
+                     "Must be 1-50 alphanumeric characters or hyphens.",
+            "field": "name",
+        }), 400
+
+    if not HEX_COLOR_RE.match(color):
+        return jsonify({
+            "error": "Invalid color. "
+                     "Must be a hex color code (e.g., #FF0000).",
+            "field": "color",
+        }), 400
+
+    try:
+        success = admin_db.add_label_definition(
+            name, color, description
+        )
+        if success:
+            return jsonify({"success": True, "name": name}), 201
+        return jsonify({
+            "error": "Label definition already exists"
+        }), 409
+    except Exception as e:
+        logger.error("Failed to create label definition: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
+
+@app.route("/admin/api/labels/<label_name>", methods=["DELETE"])
+@limiter.limit("30 per minute")
+@require_admin_key
+def delete_label_definition_route(label_name):
+    """Delete a label definition."""
+    try:
+        success = admin_db.delete_label_definition(label_name)
+        if success:
+            return jsonify({"success": True}), 200
+        return jsonify({"error": "Label definition not found"}), 404
+    except Exception as e:
+        logger.error("Failed to delete label definition: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
+
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'

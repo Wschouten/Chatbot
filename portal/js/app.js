@@ -208,9 +208,9 @@ class PortalApp {
    * Boot the portal: apply theme, check auth, bind all event listeners.
    * Called once from the HTML page after DOM is ready.
    */
-  init() {
+  async init() {
     this._applyTheme();
-    this._refreshLabelDefs();
+    await this._refreshLabelDefs();
 
     const auth = storageManager.getAuth();
     if (auth.authenticated && auth.apiKey) {
@@ -240,9 +240,14 @@ class PortalApp {
   }
 
   /**
-   * Refresh the cached label definitions from storage.
+   * Refresh the cached label definitions from the backend API.
    */
-  _refreshLabelDefs() {
+  async _refreshLabelDefs() {
+    try {
+      await storageManager.syncLabelDefinitions();
+    } catch (err) {
+      console.warn('Failed to sync label definitions from API, using cache:', err);
+    }
     this._labelDefs = storageManager.getLabelDefinitions();
   }
 
@@ -298,14 +303,20 @@ class PortalApp {
       this.currentFilters.language = settings.defaultLanguageFilter;
     }
 
-    // Sync conversations from backend API, then navigate
-    storageManager.syncFromApi().then((result) => {
-      if (result.errors.length > 0) {
-        console.warn('Portal: sync had errors:', result.errors);
-      }
-      this.navigateTo('dashboard');
-    }).catch(() => {
-      // Still navigate even if sync fails (show cached data)
+    // Sync label definitions and conversations from backend API, then navigate
+    Promise.all([
+      storageManager.syncLabelDefinitions().catch(err => {
+        console.warn('Portal: label sync failed:', err);
+      }),
+      storageManager.syncFromApi().then((result) => {
+        if (result.errors.length > 0) {
+          console.warn('Portal: sync had errors:', result.errors);
+        }
+      }).catch(err => {
+        console.warn('Portal: conversation sync failed:', err);
+      })
+    ]).then(() => {
+      this._labelDefs = storageManager.getLabelDefinitions();
       this.navigateTo('dashboard');
     });
   }
@@ -909,7 +920,8 @@ class PortalApp {
     const menu = document.getElementById('addLabelMenu');
     if (!menu) return;
 
-    this._refreshLabelDefs();
+    // Read cached label definitions (synced at portal load and after mutations)
+    this._labelDefs = storageManager.getLabelDefinitions();
     const available = this._labelDefs.filter(def => !conv.labels.includes(def.name));
 
     if (available.length === 0) {
@@ -930,37 +942,49 @@ class PortalApp {
   }
 
   /**
-   * Add a label to the current conversation.
+   * Add a label to the current conversation via API.
    *
    * @param {string} label
    */
-  _addLabelToConversation(label) {
+  async _addLabelToConversation(label) {
     if (!this.currentConversationId) return;
-    const success = storageManager.addLabel(this.currentConversationId, null, label);
-    if (success) {
+    this._closeAddLabelMenu();
+
+    const btn = document.getElementById('addLabelBtn');
+    if (btn) btn.disabled = true;
+
+    try {
+      await storageManager.addLabel(this.currentConversationId, null, label);
       this.showToast('Label "' + label + '" added.', 'success');
       this.renderConversationDetail(this.currentConversationId);
       this.renderConversationList();
-    } else {
-      this.showToast('Failed to add label.', 'error');
+    } catch (err) {
+      console.error('Failed to add label:', err);
+      this.showToast('Failed to add label: ' + err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
-    this._closeAddLabelMenu();
   }
 
   /**
-   * Remove a label from a conversation.
+   * Remove a label from a conversation via API.
    *
    * @param {string} convId
    * @param {string} label
    */
-  _removeLabelFromConversation(convId, label) {
-    const success = storageManager.removeLabel(convId, null, label);
-    if (success) {
+  async _removeLabelFromConversation(convId, label, btnElement) {
+    if (btnElement) btnElement.disabled = true;
+
+    try {
+      await storageManager.removeLabel(convId, null, label);
       this.showToast('Label "' + label + '" removed.', 'info');
       this.renderConversationDetail(convId);
       this.renderConversationList();
-    } else {
-      this.showToast('Failed to remove label.', 'error');
+    } catch (err) {
+      console.error('Failed to remove label:', err);
+      this.showToast('Failed to remove label: ' + err.message, 'error');
+    } finally {
+      if (btnElement) btnElement.disabled = false;
     }
   }
 
@@ -1005,15 +1029,20 @@ class PortalApp {
   }
 
   /**
-   * Handle a rating button click.
+   * Handle a rating button click via API.
    *
    * @param {'up' | 'down'} direction
    */
-  _handleRating(direction) {
+  async _handleRating(direction) {
     if (!this.currentConversationId) return;
 
     const conv = storageManager.getConversation(this.currentConversationId);
     if (!conv) return;
+
+    const upBtn = document.getElementById('ratingUp');
+    const downBtn = document.getElementById('ratingDown');
+    if (upBtn) upBtn.disabled = true;
+    if (downBtn) downBtn.disabled = true;
 
     let newRating;
     if (direction === 'up') {
@@ -1022,10 +1051,16 @@ class PortalApp {
       newRating = (conv.rating === 1) ? null : 1;
     }
 
-    const success = storageManager.setRating(this.currentConversationId, null, newRating);
-    if (success) {
+    try {
+      await storageManager.setRating(this.currentConversationId, null, newRating);
       this.showToast(newRating !== null ? 'Rating updated.' : 'Rating cleared.', 'success');
       this.renderConversationDetail(this.currentConversationId);
+    } catch (err) {
+      console.error('Failed to set rating:', err);
+      this.showToast('Failed to update rating: ' + err.message, 'error');
+    } finally {
+      if (upBtn) upBtn.disabled = false;
+      if (downBtn) downBtn.disabled = false;
     }
   }
 
@@ -1071,9 +1106,9 @@ class PortalApp {
   }
 
   /**
-   * Handle adding a new note to the current conversation.
+   * Handle adding a new note to the current conversation via API.
    */
-  _handleAddNote() {
+  async _handleAddNote() {
     if (!this.currentConversationId) return;
 
     const textarea = document.getElementById('notesTextarea');
@@ -1085,29 +1120,40 @@ class PortalApp {
       return;
     }
 
-    const note = storageManager.addNote(this.currentConversationId, text);
-    if (note) {
+    const btn = document.getElementById('addNoteBtn');
+    if (btn) btn.disabled = true;
+
+    try {
+      await storageManager.addNote(this.currentConversationId, text);
       textarea.value = '';
       this.showToast('Note added.', 'success');
       this.renderConversationDetail(this.currentConversationId);
-    } else {
-      this.showToast('Failed to add note.', 'error');
+    } catch (err) {
+      console.error('Failed to add note:', err);
+      this.showToast('Failed to add note: ' + err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
 
   /**
-   * Delete a note from a conversation.
+   * Delete a note from a conversation via API.
    *
    * @param {string} convId
    * @param {string} noteId
    */
-  _handleDeleteNote(convId, noteId) {
-    const success = storageManager.deleteNote(convId, noteId);
-    if (success) {
+  async _handleDeleteNote(convId, noteId, btnElement) {
+    if (btnElement) btnElement.disabled = true;
+
+    try {
+      await storageManager.deleteNote(convId, noteId);
       this.showToast('Note deleted.', 'info');
       this.renderConversationDetail(convId);
-    } else {
-      this.showToast('Failed to delete note.', 'error');
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+      this.showToast('Failed to delete note: ' + err.message, 'error');
+    } finally {
+      if (btnElement) btnElement.disabled = false;
     }
   }
 
@@ -1406,10 +1452,10 @@ class PortalApp {
   /**
    * Handle the "Reset All Data" button.
    */
-  _handleResetData() {
+  async _handleResetData() {
     const confirmed = window.confirm(
-      'This will reset all labels, notes, and ratings. ' +
-      'Conversations will be re-synced from the backend. This cannot be undone.\n\nAre you sure?'
+      'This will reset all local data. ' +
+      'Conversations and labels will be re-synced from the backend. This cannot be undone.\n\nAre you sure?'
     );
     if (!confirmed) return;
 
@@ -1417,16 +1463,23 @@ class PortalApp {
     this.currentConversationId = null;
     this.currentPage = 1;
     this.currentFilters = {};
-    this._refreshLabelDefs();
     this._applyTheme();
-    this.showToast('Data reset. Re-syncing conversations...', 'info');
+    this.showToast('Data reset. Re-syncing...', 'info');
     this._renderSettings();
 
-    // Re-sync conversations from the backend API
-    storageManager.syncFromApi().then(() => {
+    // Re-sync label definitions and conversations from the backend API
+    try {
+      await Promise.all([
+        storageManager.syncLabelDefinitions(),
+        storageManager.syncFromApi()
+      ]);
+      this._labelDefs = storageManager.getLabelDefinitions();
       this.navigateTo('dashboard');
-      this.showToast('Conversations synced from backend.', 'success');
-    });
+      this.showToast('Data synced from backend.', 'success');
+    } catch (err) {
+      console.error('Re-sync after reset failed:', err);
+      this.navigateTo('dashboard');
+    }
   }
 
   /* ────────────────────────────────────────────────────────────────
@@ -1605,7 +1658,7 @@ class PortalApp {
     // --- Conversation detail: event delegation ---
     const detailPanel = document.getElementById('conversationDetail');
     if (detailPanel) {
-      detailPanel.addEventListener('click', (e) => {
+      detailPanel.addEventListener('click', async (e) => {
         // Metadata toggle
         const metaToggle = e.target.closest('.message-metadata-toggle');
         if (metaToggle) {
@@ -1619,7 +1672,7 @@ class PortalApp {
         if (labelRemove) {
           const convId = labelRemove.getAttribute('data-conv-id');
           const label = labelRemove.getAttribute('data-label');
-          if (convId && label) self._removeLabelFromConversation(convId, label);
+          if (convId && label) await self._removeLabelFromConversation(convId, label, labelRemove);
           return;
         }
 
@@ -1628,7 +1681,7 @@ class PortalApp {
         if (noteDelete) {
           const convId = noteDelete.getAttribute('data-conv-id');
           const noteId = noteDelete.getAttribute('data-note-id');
-          if (convId && noteId) self._handleDeleteNote(convId, noteId);
+          if (convId && noteId) await self._handleDeleteNote(convId, noteId, noteDelete);
           return;
         }
       });
@@ -1646,11 +1699,11 @@ class PortalApp {
     // --- Add label menu: event delegation ---
     const addLabelMenu = document.getElementById('addLabelMenu');
     if (addLabelMenu) {
-      addLabelMenu.addEventListener('click', (e) => {
+      addLabelMenu.addEventListener('click', async (e) => {
         const menuItem = e.target.closest('.add-label-menu-item');
         if (menuItem) {
           const label = menuItem.getAttribute('data-label');
-          if (label) self._addLabelToConversation(label);
+          if (label) await self._addLabelToConversation(label);
         }
       });
     }
@@ -1658,22 +1711,22 @@ class PortalApp {
     // --- Rating buttons ---
     const ratingUp = document.getElementById('ratingUp');
     const ratingDown = document.getElementById('ratingDown');
-    if (ratingUp) ratingUp.addEventListener('click', () => self._handleRating('up'));
-    if (ratingDown) ratingDown.addEventListener('click', () => self._handleRating('down'));
+    if (ratingUp) ratingUp.addEventListener('click', async () => await self._handleRating('up'));
+    if (ratingDown) ratingDown.addEventListener('click', async () => await self._handleRating('down'));
 
     // --- Add note ---
     const addNoteBtn = document.getElementById('addNoteBtn');
     if (addNoteBtn) {
-      addNoteBtn.addEventListener('click', () => self._handleAddNote());
+      addNoteBtn.addEventListener('click', async () => await self._handleAddNote());
     }
 
     // Enter key in notes textarea (Ctrl/Cmd + Enter to submit)
     const notesTextarea = document.getElementById('notesTextarea');
     if (notesTextarea) {
-      notesTextarea.addEventListener('keydown', (e) => {
+      notesTextarea.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
-          self._handleAddNote();
+          await self._handleAddNote();
         }
       });
     }
@@ -1687,13 +1740,22 @@ class PortalApp {
     // --- Detail status select ---
     const detailStatusSelect = document.getElementById('detailStatusSelect');
     if (detailStatusSelect) {
-      detailStatusSelect.addEventListener('change', (e) => {
-        if (self.currentConversationId) {
-          const success = storageManager.setStatus(self.currentConversationId, e.target.value);
-          if (success) {
-            self.showToast('Status updated to ' + statusLabel(e.target.value) + '.', 'success');
-            self.renderConversationList();
-          }
+      detailStatusSelect.addEventListener('change', async (e) => {
+        if (!self.currentConversationId) return;
+        const newStatus = e.target.value;
+        e.target.disabled = true;
+        try {
+          await storageManager.setStatus(self.currentConversationId, newStatus);
+          self.showToast('Status updated to ' + statusLabel(newStatus) + '.', 'success');
+          self.renderConversationList();
+        } catch (err) {
+          console.error('Failed to update status:', err);
+          self.showToast('Failed to update status: ' + err.message, 'error');
+          // Revert dropdown to the stored value
+          const conv = storageManager.getConversation(self.currentConversationId);
+          if (conv) e.target.value = conv.status;
+        } finally {
+          e.target.disabled = false;
         }
       });
     }
