@@ -175,6 +175,14 @@ def handle_429(e):
     return jsonify({"response": "Te veel verzoeken. Probeer het over een paar minuten opnieuw."}), 429
 
 
+@app.errorhandler(Exception)
+def handle_generic_error(e):
+    """Catch-all: return JSON for any unhandled exception."""
+    code = getattr(e, 'code', 500)
+    logger.error("Unhandled error (%s): %s", type(e).__name__, e)
+    return jsonify({"response": "Er ging iets mis. Probeer het later opnieuw."}), code
+
+
 # =============================================================================
 # SECURITY: Reusable Admin Auth Decorator (Feature 30b)
 # =============================================================================
@@ -517,6 +525,15 @@ def _log_chat_message(session_id: str, request_id: str, user_message: str, respo
 def chat() -> Response:
     """Handle chat messages from the frontend."""
     request_id = g.request_id
+    try:
+        return _handle_chat(request_id)
+    except Exception as e:
+        logger.error("[%s] Unhandled chat error: %s", request_id, e, exc_info=True)
+        return jsonify({"response": "Er ging iets mis. Probeer het later opnieuw.", "request_id": request_id}), 200
+
+
+def _handle_chat(request_id: str) -> Response:
+    """Inner chat handler (extracted so the outer function can catch all errors)."""
     data = request.json
     user_message: str = data.get('message', '') if data else ''
     session_id: str = data.get('session_id', 'unknown_session') if data else 'unknown_session'

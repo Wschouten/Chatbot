@@ -13,7 +13,7 @@ from brand_config import get_brand_config
 logger = logging.getLogger(__name__)
 
 # SMTP timeout in seconds
-SMTP_TIMEOUT = 30
+SMTP_TIMEOUT = 10
 
 
 class EmailClient:
