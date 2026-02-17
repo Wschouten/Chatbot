@@ -158,6 +158,23 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 
+
+# =============================================================================
+# GLOBAL ERROR HANDLER: Always return JSON for API errors
+# =============================================================================
+@app.errorhandler(500)
+def handle_500(e):
+    """Return JSON instead of HTML for internal server errors."""
+    logger.error("Internal Server Error: %s", e)
+    return jsonify({"response": "Er ging iets mis op de server. Probeer het later opnieuw."}), 500
+
+
+@app.errorhandler(429)
+def handle_429(e):
+    """Return JSON for rate-limit errors."""
+    return jsonify({"response": "Te veel verzoeken. Probeer het over een paar minuten opnieuw."}), 429
+
+
 # =============================================================================
 # SECURITY: Reusable Admin Auth Decorator (Feature 30b)
 # =============================================================================
@@ -561,10 +578,14 @@ def chat() -> Response:
             original_q = state_data.get('question', '')
 
             # Escalate (send email or create Zendesk ticket)
-            if ESCALATION_METHOD == "zendesk":
-                result = escalation_client.create_ticket(name, email, original_q, chat_history)
-            else:
-                result = escalation_client.send_email(name, email, original_q, chat_history)
+            try:
+                if ESCALATION_METHOD == "zendesk":
+                    result = escalation_client.create_ticket(name, email, original_q, chat_history)
+                else:
+                    result = escalation_client.send_email(name, email, original_q, chat_history)
+            except Exception as exc:
+                logger.error("Escalation failed with unhandled error: %s", exc)
+                result = None
 
             # Reset State and clear history after escalation
             state_data = {
