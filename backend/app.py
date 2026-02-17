@@ -478,6 +478,40 @@ def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
     return msg
 
 
+def _log_chat_message(session_id: str, request_id: str, user_message: str, response_text: str) -> None:
+    """Log a chat message exchange to the conversation log file."""
+    try:
+        log_dir = "logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+        log_entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "request_id": request_id,
+            "user": _redact_pii_for_log(user_message),
+            "bot": _redact_pii_for_log(response_text)
+        }
+
+        safe_id = sanitize_session_id(session_id)
+        log_file = os.path.join(log_dir, f"chat_{safe_id}.json")
+
+        history = []
+        if os.path.exists(log_file):
+            with open(log_file, 'r', encoding='utf-8') as f:
+                try:
+                    history = json.load(f)
+                except json.JSONDecodeError as e:
+                    logger.warning("Corrupt log file %s, resetting: %s", log_file, e)
+
+        history.append(log_entry)
+
+        with open(log_file, 'w', encoding='utf-8') as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error("[%s] Conversation logging failed: %s", request_id, e)
+
+
 @app.route('/api/chat', methods=['POST'])
 @limiter.limit("30 per minute")
 def chat() -> Response:
@@ -518,9 +552,9 @@ def chat() -> Response:
             state_data = {'state': 'inactive', 'chat_history': chat_history}
             save_session_state(session_id, state_data)
 
-            if user_lang == 'nl':
-                return jsonify({"response": "Geen probleem! 👍 Waarmee kan ik je verder helpen?", "request_id": request_id})
-            return jsonify({"response": "No problem! 👍 How else can I help you?", "request_id": request_id})
+            resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
 
         elif intent == 'new_question':
             # User is asking something else - cancel ticket flow and process as RAG
@@ -535,9 +569,9 @@ def chat() -> Response:
             state_data['state'] = 'awaiting_email'
             save_session_state(session_id, state_data)
 
-            if user_lang == 'nl':
-                return jsonify({"response": f"Leuk je te ontmoeten, {clean_name}! 👋 Wat is je e-mailadres?", "request_id": request_id})
-            return jsonify({"response": f"Nice to meet you, {clean_name}! 👋 What's your email address?", "request_id": request_id})
+            resp = f"Leuk je te ontmoeten, {clean_name}! 👋 Wat is je e-mailadres?" if user_lang == 'nl' else f"Nice to meet you, {clean_name}! 👋 What's your email address?"
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
 
     # ---------------------------------------------------------
     # STATE: AWAITING_EMAIL (with decline detection)
@@ -555,9 +589,9 @@ def chat() -> Response:
                 state_data = {'state': 'inactive', 'chat_history': chat_history}
                 save_session_state(session_id, state_data)
 
-                if user_lang == 'nl':
-                    return jsonify({"response": "Geen probleem! 👍 Waarmee kan ik je verder helpen?", "request_id": request_id})
-                return jsonify({"response": "No problem! 👍 How else can I help you?", "request_id": request_id})
+                resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
+                _log_chat_message(session_id, request_id, user_message, resp)
+                return jsonify({"response": resp, "request_id": request_id})
 
             elif intent == 'new_question':
                 # User asking something else - cancel and process as RAG
@@ -567,9 +601,9 @@ def chat() -> Response:
 
             else:
                 # Genuinely invalid email - ask again
-                if user_lang == 'nl':
-                    return jsonify({"response": "Hmm, dat lijkt niet helemaal te kloppen 🤔 Kun je je e-mailadres nog een keer checken?", "request_id": request_id})
-                return jsonify({"response": "Hmm, that doesn't look quite right 🤔 Could you double-check your email address?", "request_id": request_id})
+                resp = "Hmm, dat lijkt niet helemaal te kloppen 🤔 Kun je je e-mailadres nog een keer checken?" if user_lang == 'nl' else "Hmm, that doesn't look quite right 🤔 Could you double-check your email address?"
+                _log_chat_message(session_id, request_id, user_message, resp)
+                return jsonify({"response": resp, "request_id": request_id})
 
         else:
             # Valid email - proceed with ticket creation
@@ -597,20 +631,13 @@ def chat() -> Response:
             if result:
                 if ESCALATION_METHOD == "zendesk":
                     ticket_id = result.get('ticket', {}).get('id', '???')
-                    if user_lang == 'nl':
-                        return jsonify({"response": f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op.", "request_id": request_id})
-                    else:
-                        return jsonify({"response": f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly.", "request_id": request_id})
+                    resp = f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op." if user_lang == 'nl' else f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly."
                 else:
-                    if user_lang == 'nl':
-                        return jsonify({"response": "Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail.", "request_id": request_id})
-                    else:
-                        return jsonify({"response": "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible.", "request_id": request_id})
+                    resp = "Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail." if user_lang == 'nl' else "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible."
             else:
-                if user_lang == 'nl':
-                    return jsonify({"response": "Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op.", "request_id": request_id})
-                else:
-                    return jsonify({"response": "I'm sorry, something went wrong sending your message. Please contact us directly.", "request_id": request_id})
+                resp = "Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op." if user_lang == 'nl' else "I'm sorry, something went wrong sending your message. Please contact us directly."
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
 
 
     # Check if user is responding to a pending order confirmation
@@ -646,6 +673,7 @@ def chat() -> Response:
                     else:
                         response_text = f"❌ {result.get('error', 'Kon tracking info niet ophalen.')}"
 
+                    _log_chat_message(session_id, request_id, user_message, response_text)
                     return jsonify({"response": response_text, "request_id": request_id})
 
                 # User declined (nee/no/nope/incorrect/verkeerd)
@@ -656,6 +684,7 @@ def chat() -> Response:
                     save_session_state(session_id, state_data)
 
                     response_text = "Oké, geen probleem! Wat is je correcte bestelnummer?"
+                    _log_chat_message(session_id, request_id, user_message, response_text)
                     return jsonify({"response": response_text, "request_id": request_id})
 
     # Detect potential order/zending number in message
@@ -673,6 +702,7 @@ def chat() -> Response:
 
         # Ask for confirmation
         response_text = f"Wil je de status opvragen van zending **#{order_id}**? (Antwoord met 'ja' of 'nee')"
+        _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Feature 15: Detect language BEFORE RAG call so we can translate queries
@@ -718,41 +748,8 @@ def chat() -> Response:
     state_data['chat_history'] = chat_history[-10:]
     save_session_state(session_id, state_data)
 
-    # LOGGING: Save conversation to file (with PII redaction)
-    try:
-        log_dir = "logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-
-        # Simple logging format with request ID for tracing (PII redacted)
-        log_entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
-            "request_id": request_id,
-            "user": _redact_pii_for_log(user_message),
-            "bot": _redact_pii_for_log(response_text)
-        }
-        
-        # File per session (use sanitized ID for safety)
-        safe_id = sanitize_session_id(session_id)
-        log_file = os.path.join(log_dir, f"chat_{safe_id}.json")
-
-        # Read existing or start new
-        history = []
-        if os.path.exists(log_file):
-            with open(log_file, 'r', encoding='utf-8') as f:
-                try:
-                    history = json.load(f)
-                except json.JSONDecodeError as e:
-                    logger.warning("Corrupt log file %s, resetting: %s", log_file, e)
-        
-        history.append(log_entry)
-        
-        with open(log_file, 'w', encoding='utf-8') as f:
-            json.dump(history, f, indent=2, ensure_ascii=False)
-            
-    except Exception as e:
-        logger.error("[%s] Conversation logging failed: %s", request_id, e)
-
+    # Log and return
+    _log_chat_message(session_id, request_id, user_message, response_text)
     logger.info("[%s] Response sent successfully", request_id)
     return jsonify({"response": response_text, "request_id": request_id})
 
