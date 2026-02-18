@@ -53,6 +53,15 @@ htmlcov/
 # Node (if any)
 node_modules/
 
+# Debug/diagnostic artifacts
+backend/diagnose_*.py
+backend/*_test*.txt
+backend/*_output*.txt
+backend/*_result*.txt
+backend/*_diag*.txt
+backend/*_logs*.txt
+backend/*_log_*.txt
+
 # Misc
 nul
 %WilcoS%/

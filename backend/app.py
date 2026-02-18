@@ -5,6 +5,7 @@ import re
 import json
 import datetime
 import secrets
+import sys
 import uuid
 from functools import wraps
 from typing import Any
@@ -15,7 +16,7 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from rag_engine import RagEngine, get_openai_health
+from rag_engine import RagEngine, get_openai_health, RAG_DEPENDENCIES_LOADED
 from shipping_api import get_shipment_status, get_shipping_client
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
@@ -282,6 +283,11 @@ def health():
         "status": "ok",
         "dependencies": {}
     }
+    health_status["rag_available"] = bool(
+        RAG_DEPENDENCIES_LOADED and rag_engine.collection
+    )
+    health_status["python_version"] = sys.version.split()[0]
+    health_status["environment"] = "docker" if os.path.exists("/.dockerenv") else "local"
     status_code = 200
 
     # Check ChromaDB connection

@@ -36,7 +36,7 @@ A customizable customer support chatbot powered by RAG (Retrieval-Augmented Gene
 
 ## Prerequisites
 
-- Python 3.8+ (or Docker)
+- Python 3.11 (or Docker, recommended). Note: Python 3.13+ has ChromaDB compatibility issues.
 - OpenAI API Key
 
 ## Quick Start

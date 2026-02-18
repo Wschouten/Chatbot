@@ -105,6 +105,10 @@ class RagEngine:
         # Feature 13: Retrieval Quality Improvements
         self.relevance_threshold = float(os.getenv('RAG_RELEVANCE_THRESHOLD', '1.2'))
 
+        # RAG result caching for session consistency
+        self.session_cache: dict[str, tuple[str, float]] = {}  # query -> (context, timestamp)
+        self.cache_ttl: float = 300.0  # 5 minutes cache TTL
+
         # Initialize OpenAI (uses the lazy singleton from get_openai_client)
         self.openai_client = get_openai_client()
 
@@ -150,9 +154,12 @@ class RagEngine:
             return query
 
         try:
-            recent = chat_history[-4:]
+            # Use last 6 messages instead of 4 for better context
+            recent = chat_history[-6:]
+
+            # Don't truncate content - use full messages for entity preservation
             history_text = "\n".join(
-                f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content'][:200]}"
+                f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
                 for m in recent
             )
 
@@ -163,8 +170,10 @@ class RagEngine:
                         "role": "system",
                         "content": (
                             "You rewrite follow-up questions into standalone questions. "
-                            "Use the conversation history to resolve pronouns, references, "
-                            "and implicit subjects. Keep the language of the user's question "
+                            "Use the conversation history to resolve pronouns and references. "
+                            "CRITICAL: Always preserve product names, specific items, and entities from the conversation. "
+                            "If a product was mentioned (e.g., 'cacaodoppen'), include it in the rewritten query. "
+                            "Keep the language of the user's question "
                             "(Dutch stays Dutch, English stays English). "
                             "If the question is already standalone, return it unchanged. "
                             "Output ONLY the rewritten question, nothing else."
@@ -179,8 +188,8 @@ class RagEngine:
                         )
                     }
                 ],
-                temperature=0.1,
-                max_completion_tokens=100
+                temperature=0.0,
+                max_completion_tokens=150
             )
             result = response.choices[0].message.content
             if result:
@@ -191,6 +200,82 @@ class RagEngine:
         except Exception as e:
             logger.warning("Query reformulation failed, using original: %s", e)
             return query
+
+    def _get_cached_context(self, query: str) -> Optional[str]:
+        """Get cached RAG context if available and not stale."""
+        import time
+
+        if query in self.session_cache:
+            context, timestamp = self.session_cache[query]
+            if time.time() - timestamp < self.cache_ttl:
+                logger.debug("Using cached context for query: '%s'", query)
+                return context
+            else:
+                # Clean up stale entry
+                del self.session_cache[query]
+        return None
+
+    def _cache_context(self, query: str, context: str) -> None:
+        """Cache RAG context for this query."""
+        import time
+        self.session_cache[query] = (context, time.time())
+
+        # Clean up old entries (keep max 50)
+        if len(self.session_cache) > 50:
+            sorted_items = sorted(
+                self.session_cache.items(),
+                key=lambda x: x[1][1]
+            )
+            # Remove oldest 10
+            for key, _ in sorted_items[:10]:
+                del self.session_cache[key]
+
+    def _extract_conversation_entities(self, chat_history: list[dict[str, str]]) -> list[str]:
+        """Extract product names and key entities from recent conversation.
+
+        Returns a list of important terms/products that should be considered
+        in the current query context.
+        """
+        if not chat_history or not self.openai_client:
+            return []
+
+        try:
+            # Look at last 4 messages for entity extraction
+            recent = chat_history[-4:]
+            history_text = "\n".join(
+                f"{m['role']}: {m['content'][:500]}"
+                for m in recent
+            )
+
+            response = self.openai_client.chat.completions.create(
+                model=self.chat_model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "Extract product names, specific items, and key entities from this conversation. "
+                            "Return ONLY a comma-separated list of terms, or 'NONE' if there are no specific entities. "
+                            "Focus on concrete nouns like product names, not general concepts."
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": f"Conversation:\n{history_text}\n\nEntities:"
+                    }
+                ],
+                temperature=0.0,
+                max_completion_tokens=50
+            )
+
+            result = response.choices[0].message.content
+            if result and result.strip().upper() != 'NONE':
+                entities = [e.strip() for e in result.split(',') if e.strip()]
+                logger.debug("Extracted conversation entities: %s", entities)
+                return entities
+            return []
+        except Exception as e:
+            logger.warning("Entity extraction failed: %s", e)
+            return []
 
     def _extract_metadata_from_content(self, content: str, filename: str) -> dict[str, str]:
         """Extract metadata from document content.
@@ -457,7 +542,17 @@ class RagEngine:
 
                 # Feature 25: Reformulate follow-up questions into standalone queries
                 if chat_history:
+                    # Extract entities from conversation for context-aware search
+                    conversation_entities = self._extract_conversation_entities(chat_history)
+
                     search_query = self._reformulate_query(query, chat_history)
+
+                    # If entities were found and not in reformulated query, append them
+                    if conversation_entities:
+                        for entity in conversation_entities:
+                            if entity.lower() not in search_query.lower():
+                                search_query = f"{search_query} {entity}"
+                        logger.debug("Enhanced search query with entities: '%s'", search_query)
 
                 if language == 'en':
                     try:
@@ -477,62 +572,70 @@ class RagEngine:
                     except Exception as e:
                         logger.warning("Translation failed, using original query: %s", e)
 
-                query_emb = self._get_embedding(search_query)
-
-                # Feature 13: Fetch more results for diversity filtering
-                results = self.collection.query(query_embeddings=[query_emb], n_results=10)
-
-                logger.debug("RAG Search Results for '%s':", query)
-                if results["documents"] and results["distances"]:
-                    # Feature 13A: Distance Threshold Filtering
-                    filtered_docs = []
-                    filtered_ids = []
-                    filtered_distances = []
-
-                    for i, (doc, doc_id, distance) in enumerate(zip(
-                        results["documents"][0],
-                        results["ids"][0],
-                        results["distances"][0]
-                    )):
-                        if distance <= self.relevance_threshold:
-                            filtered_docs.append(doc)
-                            filtered_ids.append(doc_id)
-                            filtered_distances.append(distance)
-                            logger.debug(
-                                "  Result %d (ID: %s, Distance: %.3f): %s...",
-                                i + 1, doc_id, distance, doc[:100]
-                            )
-                        else:
-                            logger.debug(
-                                "  Filtered out %d (ID: %s, Distance: %.3f > threshold %.2f)",
-                                i + 1, doc_id, distance, self.relevance_threshold
-                            )
-
-                    # Feature 13B: Source Diversity - Cap at max 2 chunks per source
-                    if filtered_docs:
-                        source_count: dict[str, int] = {}
-                        diversified_docs = []
-                        diversified_ids = []
-
-                        for doc, doc_id in zip(filtered_docs, filtered_ids):
-                            # Extract source from document ID (format: "source_chunk_X")
-                            source = "_".join(doc_id.split("_")[:-2]) if "_chunk_" in doc_id else doc_id
-
-                            if source_count.get(source, 0) < 2:
-                                diversified_docs.append(doc)
-                                diversified_ids.append(doc_id)
-                                source_count[source] = source_count.get(source, 0) + 1
-
-                            # Take top 5 from diversified set
-                            if len(diversified_docs) >= 5:
-                                break
-
-                        logger.debug("After diversity filtering: %d results", len(diversified_docs))
-                        context = "\n\n".join(diversified_docs)
-                    else:
-                        logger.debug("  All results filtered out by distance threshold.")
+                # Check cache first
+                cached_context = self._get_cached_context(search_query)
+                if cached_context:
+                    context = cached_context
                 else:
-                    logger.debug("  No results found.")
+                    query_emb = self._get_embedding(search_query)
+
+                    # Feature 13: Fetch more results for diversity filtering
+                    results = self.collection.query(query_embeddings=[query_emb], n_results=10)
+
+                    logger.debug("RAG Search Results for '%s':", query)
+                    if results["documents"] and results["distances"]:
+                        # Feature 13A: Distance Threshold Filtering
+                        filtered_docs = []
+                        filtered_ids = []
+                        filtered_distances = []
+
+                        for i, (doc, doc_id, distance) in enumerate(zip(
+                            results["documents"][0],
+                            results["ids"][0],
+                            results["distances"][0]
+                        )):
+                            if distance <= self.relevance_threshold:
+                                filtered_docs.append(doc)
+                                filtered_ids.append(doc_id)
+                                filtered_distances.append(distance)
+                                logger.debug(
+                                    "  Result %d (ID: %s, Distance: %.3f): %s...",
+                                    i + 1, doc_id, distance, doc[:100]
+                                )
+                            else:
+                                logger.debug(
+                                    "  Filtered out %d (ID: %s, Distance: %.3f > threshold %.2f)",
+                                    i + 1, doc_id, distance, self.relevance_threshold
+                                )
+
+                        # Feature 13B: Source Diversity - Cap at max 2 chunks per source
+                        if filtered_docs:
+                            source_count: dict[str, int] = {}
+                            diversified_docs = []
+                            diversified_ids = []
+
+                            for doc, doc_id in zip(filtered_docs, filtered_ids):
+                                # Extract source from document ID (format: "source_chunk_X")
+                                source = "_".join(doc_id.split("_")[:-2]) if "_chunk_" in doc_id else doc_id
+
+                                if source_count.get(source, 0) < 2:
+                                    diversified_docs.append(doc)
+                                    diversified_ids.append(doc_id)
+                                    source_count[source] = source_count.get(source, 0) + 1
+
+                                # Take top 5 from diversified set
+                                if len(diversified_docs) >= 5:
+                                    break
+
+                            logger.debug("After diversity filtering: %d results", len(diversified_docs))
+                            context = "\n\n".join(diversified_docs)
+                            # Cache the context for future queries
+                            if context:
+                                self._cache_context(search_query, context)
+                        else:
+                            logger.debug("  All results filtered out by distance threshold.")
+                    else:
+                        logger.debug("  No results found.")
             except Exception as e:
                 logger.error("RAG Search failed: %s", e)
 
@@ -549,6 +652,14 @@ class RagEngine:
                     "- Write naturally and conversationally\n"
                     "- You are a person in conversation, not a documentation bot\n"
                     "- Keep answers concise (no walls of text)\n\n"
+
+                    "CONVERSATION CONTINUITY (CRITICAL):\n"
+                    "- Read the conversation history carefully\n"
+                    "- If you discussed a product earlier in this conversation, NEVER deny that\n"
+                    "- Check your own previous answers before claiming you don't know something\n"
+                    "- If the CONTEXT is now empty but you gave information earlier, "
+                    "reference your previous answer: 'As I mentioned earlier...'\n"
+                    "- NEVER ask 'which product are we talking about?' if you already know from history\n\n"
 
                     "CONTEXT & RAG RULES (VERY IMPORTANT):\n"
                     "You operate in a closed world.\n"
@@ -616,6 +727,14 @@ class RagEngine:
                     "- Je bent een mens in gesprek, geen documentatie-bot\n"
                     "- Houd antwoorden bondig (geen muren van tekst)\n\n"
 
+                    "CONVERSATIE CONTINUÏTEIT (KRITIEK):\n"
+                    "- Lees de conversatie geschiedenis aandachtig\n"
+                    "- Als je eerder in dit gesprek al over een product hebt gepraat, ontken dat NOOIT\n"
+                    "- Controleer je eigen eerdere antwoorden voordat je zegt dat je iets niet weet\n"
+                    "- Als de CONTEXT nu leeg is maar je eerder WEL informatie hebt gegeven, "
+                    "verwijs dan naar je eerdere antwoord: 'Zoals ik eerder noemde...'\n"
+                    "- Vraag NOOIT 'over welk product hebben we het?' als je dat al weet uit de geschiedenis\n\n"
+
                     "CONTEXT & RAG-REGELS (ZEER BELANGRIJK):\n"
                     "Je opereert in een gesloten wereld.\n"
                     "- Baseer je antwoorden uitsluitend op de aangeleverde CONTEXT\n"
@@ -671,7 +790,85 @@ class RagEngine:
                     "- Speculeer nooit\n"
                     "- Wees liever eerlijk onzeker dan overtuigend fout"
                 )
-            user_content = f"Context:\n{context}\n\nQuestion: {query}"
+
+            # Build conversation summary for assistant awareness
+            conversation_summary = ""
+            if chat_history:
+                # Extract assistant's last 2 statements about products
+                assistant_statements = [
+                    msg['content'] for msg in chat_history[-6:]
+                    if msg['role'] == 'assistant'
+                ][-2:]
+
+                if assistant_statements:
+                    if language == 'en':
+                        conversation_summary = (
+                            "\n\nIMPORTANT - Your recent statements in this conversation:\n"
+                            + "\n".join(f"- You said: {stmt[:200]}" for stmt in assistant_statements)
+                            + "\nDo NOT contradict these statements. Reference them if relevant.\n"
+                        )
+                    else:
+                        conversation_summary = (
+                            "\n\nBELANGRIJK - Je recente uitspraken in dit gesprek:\n"
+                            + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in assistant_statements)
+                            + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
+                        )
+
+            user_content = f"Context:\n{context}\n{conversation_summary}\n\nQuestion: {query}"
+        elif chat_history:
+            # No RAG context available, but we have conversation history.
+            # Use conversation history to maintain context instead of returning __UNKNOWN__.
+            if language == 'en':
+                system_prompt += (
+                    "\nYou are a helpful customer service representative. "
+                    "The knowledge base is currently unavailable, but you have the conversation history. "
+                    "Use the conversation history to maintain context and provide helpful responses.\n\n"
+                    "CONVERSATION CONTINUITY (CRITICAL):\n"
+                    "- Read the conversation history carefully\n"
+                    "- If you discussed a product earlier in this conversation, NEVER deny that\n"
+                    "- Check your own previous answers before claiming you don't know something\n"
+                    "- Reference your previous answers: 'As I mentioned earlier...'\n"
+                    "- NEVER ask 'which product are we talking about?' if you already know from history\n"
+                    "- If you gave information earlier, use that to answer follow-up questions\n\n"
+                    "If you truly cannot answer, say so honestly but never forget what was already discussed."
+                )
+            else:
+                system_prompt += (
+                    "\nJe bent een vriendelijke klantenservice medewerker. "
+                    "De kennisbank is momenteel niet beschikbaar, maar je hebt de gespreksgeschiedenis. "
+                    "Gebruik de gespreksgeschiedenis om context te behouden en behulpzame antwoorden te geven.\n\n"
+                    "CONVERSATIE CONTINUÏTEIT (KRITIEK):\n"
+                    "- Lees de conversatie geschiedenis aandachtig\n"
+                    "- Als je eerder in dit gesprek al over een product hebt gepraat, ontken dat NOOIT\n"
+                    "- Controleer je eigen eerdere antwoorden voordat je zegt dat je iets niet weet\n"
+                    "- Verwijs naar je eerdere antwoorden: 'Zoals ik eerder noemde...'\n"
+                    "- Vraag NOOIT 'over welk product hebben we het?' als je dat al weet uit de geschiedenis\n"
+                    "- Als je eerder informatie hebt gegeven, gebruik die om vervolgvragen te beantwoorden\n\n"
+                    "Als je echt niet kunt antwoorden, zeg dat eerlijk maar vergeet nooit wat al besproken is."
+                )
+
+            # Build conversation summary for the fallback path too
+            conversation_summary = ""
+            assistant_statements = [
+                msg['content'] for msg in chat_history[-6:]
+                if msg['role'] == 'assistant'
+            ][-2:]
+
+            if assistant_statements:
+                if language == 'en':
+                    conversation_summary = (
+                        "\n\nIMPORTANT - Your recent statements in this conversation:\n"
+                        + "\n".join(f"- You said: {stmt[:200]}" for stmt in assistant_statements)
+                        + "\nDo NOT contradict these statements. Reference them if relevant.\n"
+                    )
+                else:
+                    conversation_summary = (
+                        "\n\nBELANGRIJK - Je recente uitspraken in dit gesprek:\n"
+                        + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in assistant_statements)
+                        + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
+                    )
+
+            user_content = f"Geen kennisbank context beschikbaar.{conversation_summary}\n\nQuestion: {query}"
         else:
             return "__UNKNOWN__"
 

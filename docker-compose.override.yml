@@ -1,0 +1,9 @@
+# Local development overrides - auto-merged by docker-compose up
+# Railway ignores this file (uses Dockerfile CMD directly)
+services:
+  chatbot:
+    environment:
+      - FLASK_DEBUG=true
+      - FLASK_ENV=development
+    command: sh -c "exec python app.py"
+    restart: unless-stopped
