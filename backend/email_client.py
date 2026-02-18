@@ -1,4 +1,4 @@
-"""Resend email client for escalation emails."""
+"""MailerSend email client for escalation emails."""
 import logging
 import os
 import threading
@@ -11,24 +11,24 @@ from brand_config import get_brand_config
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Resend API endpoint
-RESEND_API_URL = "https://api.resend.com/emails"
+# MailerSend API endpoint
+MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 
 # HTTP timeout in seconds
 HTTP_TIMEOUT = 15
 
 
 class EmailClient:
-    """Client for sending escalation emails via Resend API."""
+    """Client for sending escalation emails via MailerSend API."""
 
     def __init__(self) -> None:
-        """Initialize email client with Resend credentials from environment."""
-        self.api_key = os.environ.get("RESEND_API_KEY")
+        """Initialize email client with MailerSend credentials from environment."""
+        self.api_key = os.environ.get("MAILERSEND_API_KEY")
         self.from_email = os.environ.get("SMTP_FROM_EMAIL")
         self.to_email = os.environ.get("SMTP_TO_EMAIL")
 
     def is_configured(self) -> bool:
-        """Check if Resend API key is configured."""
+        """Check if MailerSend API key is configured."""
         return bool(self.api_key and self.from_email and self.to_email)
 
     def send_email(
@@ -38,7 +38,7 @@ class EmailClient:
         question: str,
         session_history: Optional[list[dict[str, str]]] = None
     ) -> Optional[dict[str, Any]]:
-        """Send an escalation email via Resend API.
+        """Send an escalation email via MailerSend API.
 
         Args:
             name: Customer name
@@ -61,7 +61,7 @@ class EmailClient:
         brand = get_brand_config()
         welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
 
-        body = f"Beste GroundCoverGroup,\n\n"
+        body = "Beste GroundCoverGroup,\n\n"
         body += f"Stuur een email naar het volgende mailadres: {requester_email}\n\n"
         body += "=" * 50 + "\n"
         body += "COMPLETE CONVERSATION HISTORY\n"
@@ -77,27 +77,35 @@ class EmailClient:
         else:
             body += "(No further conversation history)\n"
 
-        # Send via Resend API
+        # Send via MailerSend API
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
         payload = {
-            "from": self.from_email,
-            "to": [self.to_email],
+            "from": {
+                "email": self.from_email,
+                "name": "GroundCoverGroup Chatbot",
+            },
+            "to": [
+                {
+                    "email": self.to_email,
+                    "name": "GroundCoverGroup Support",
+                }
+            ],
             "subject": subject,
             "text": body,
         }
 
         try:
             resp = http_requests.post(
-                RESEND_API_URL, json=payload, headers=headers, timeout=HTTP_TIMEOUT
+                MAILERSEND_API_URL, json=payload, headers=headers, timeout=HTTP_TIMEOUT
             )
             resp.raise_for_status()
             logger.info("Escalation email sent successfully for: %s", name)
             return {"ticket": {"id": "EMAIL-SENT", "subject": subject}}
         except http_requests.RequestException as e:
-            logger.error("Resend API error: %s", e)
+            logger.error("MailerSend API error: %s", e)
             return None
 
     def send_email_async(
@@ -109,7 +117,7 @@ class EmailClient:
     ) -> dict[str, Any]:
         """Queue an escalation email to be sent in a background thread.
 
-        Returns immediately with a success result. The actual Resend API call
+        Returns immediately with a success result. The actual MailerSend API call
         happens in a daemon thread so it doesn't block the HTTP response.
         """
         thread = threading.Thread(
