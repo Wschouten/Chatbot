@@ -1,4 +1,4 @@
-"""Microsoft Graph API email client for escalation emails."""
+"""Resend email client for escalation emails."""
 import logging
 import os
 import threading
@@ -11,51 +11,25 @@ from brand_config import get_brand_config
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Graph API endpoints
-TOKEN_URL = "https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
-SEND_MAIL_URL = "https://graph.microsoft.com/v1.0/users/{from_email}/sendMail"
+# Resend API endpoint
+RESEND_API_URL = "https://api.resend.com/emails"
 
 # HTTP timeout in seconds
 HTTP_TIMEOUT = 15
 
 
 class EmailClient:
-    """Client for sending escalation emails via Microsoft Graph API (Office 365)."""
+    """Client for sending escalation emails via Resend API."""
 
     def __init__(self) -> None:
-        """Initialize email client with Graph API credentials from environment."""
-        self.tenant_id = os.environ.get("MS_GRAPH_TENANT_ID")
-        self.client_id = os.environ.get("MS_GRAPH_CLIENT_ID")
-        self.client_secret = os.environ.get("MS_GRAPH_CLIENT_SECRET")
+        """Initialize email client with Resend credentials from environment."""
+        self.api_key = os.environ.get("RESEND_API_KEY")
         self.from_email = os.environ.get("SMTP_FROM_EMAIL")
         self.to_email = os.environ.get("SMTP_TO_EMAIL")
 
     def is_configured(self) -> bool:
-        """Check if Graph API credentials are configured."""
-        return bool(
-            self.tenant_id
-            and self.client_id
-            and self.client_secret
-            and self.from_email
-            and self.to_email
-        )
-
-    def _get_access_token(self) -> Optional[str]:
-        """Acquire an access token using OAuth2 client credentials flow."""
-        url = TOKEN_URL.format(tenant_id=self.tenant_id)
-        data = {
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
-            "scope": "https://graph.microsoft.com/.default",
-            "grant_type": "client_credentials",
-        }
-        try:
-            resp = http_requests.post(url, data=data, timeout=HTTP_TIMEOUT)
-            resp.raise_for_status()
-            return resp.json().get("access_token")
-        except http_requests.RequestException as e:
-            logger.error("Graph API token request failed: %s", e)
-            return None
+        """Check if Resend API key is configured."""
+        return bool(self.api_key and self.from_email and self.to_email)
 
     def send_email(
         self,
@@ -64,7 +38,7 @@ class EmailClient:
         question: str,
         session_history: Optional[list[dict[str, str]]] = None
     ) -> Optional[dict[str, Any]]:
-        """Send an escalation email via Microsoft Graph API.
+        """Send an escalation email via Resend API.
 
         Args:
             name: Customer name
@@ -104,45 +78,28 @@ class EmailClient:
         else:
             body += "(No further conversation history)\n"
 
-        # Get access token
-        token = self._get_access_token()
-        if not token:
-            logger.error("Failed to acquire Graph API access token")
-            return None
-
-        # Build Graph API sendMail payload
-        mail_payload = {
-            "message": {
-                "subject": subject,
-                "body": {
-                    "contentType": "Text",
-                    "content": body,
-                },
-                "toRecipients": [
-                    {"emailAddress": {"address": self.to_email}}
-                ],
-                "replyTo": [
-                    {"emailAddress": {"address": requester_email}}
-                ],
-            },
-            "saveToSentItems": "false",
-        }
-
-        url = SEND_MAIL_URL.format(from_email=self.from_email)
+        # Send via Resend API
         headers = {
-            "Authorization": f"Bearer {token}",
+            "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+        }
+        payload = {
+            "from": self.from_email,
+            "to": [self.to_email],
+            "subject": subject,
+            "text": body,
+            "reply_to": requester_email,
         }
 
         try:
             resp = http_requests.post(
-                url, json=mail_payload, headers=headers, timeout=HTTP_TIMEOUT
+                RESEND_API_URL, json=payload, headers=headers, timeout=HTTP_TIMEOUT
             )
             resp.raise_for_status()
             logger.info("Escalation email sent successfully for: %s", name)
             return {"ticket": {"id": "EMAIL-SENT", "subject": subject}}
         except http_requests.RequestException as e:
-            logger.error("Graph API sendMail failed: %s", e)
+            logger.error("Resend API error: %s", e)
             return None
 
     def send_email_async(
@@ -154,7 +111,7 @@ class EmailClient:
     ) -> dict[str, Any]:
         """Queue an escalation email to be sent in a background thread.
 
-        Returns immediately with a success result. The actual Graph API send
+        Returns immediately with a success result. The actual Resend API call
         happens in a daemon thread so it doesn't block the HTTP response.
         """
         thread = threading.Thread(
