@@ -1,0 +1,20 @@
+[
+  {
+    "timestamp": "2026-02-17T12:40:07.609731",
+    "request_id": "295d6dc1",
+    "user": "ik wil graag met iemand praten",
+    "bot": "Ik snap het, maar ik kan je niet precies zien wie er beschikbaar is om mee te praten of direct een gesprek “doorzetten”. Waar wil je het over hebben (bestelling, retour, account of iets anders)? Als je je ordernummer of e-mailadres deelt, kan ik meteen gericht met je meekijken."
+  },
+  {
+    "timestamp": "2026-02-17T12:40:12.475952",
+    "request_id": "2b86fbd1",
+    "user": "Test User",
+    "bot": "Ik heb niet genoeg specifieke info om te weten wat “Test User” in jouw context precies betekent. Bedoel je een testgebruiker/account om in te loggen, of een dummy-profiel om data te testen? Als je zegt in welke app/omgeving je dit ziet (en eventueel een screenshot of foutmelding), kan ik gerichter meedenken."
+  },
+  {
+    "timestamp": "2026-02-17T12:40:17.819443",
+    "request_id": "dd236bc8",
+    "user": "[EMAIL_REDACTED]",
+    "bot": "Ik heb hier helaas geen specifieke info over het e-mailadres [EMAIL_REDACTED] (bijv. van wie het is of of het actief is). In het algemeen kun je dit het snelst checken door een testmail te sturen of in je contacten/CRM te zoeken op het domein eurostyle.nl. Waar wil je dit adres precies voor gebruiken (contactpersoon vinden, mailen, of verifiëren of het klopt)?"
+  }
+]
