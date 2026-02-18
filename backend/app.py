@@ -163,6 +163,24 @@ limiter = Limiter(
 # =============================================================================
 # GLOBAL ERROR HANDLER: Always return JSON for API errors
 # =============================================================================
+@app.errorhandler(400)
+def handle_400(e):
+    """Return JSON instead of HTML for bad requests."""
+    return jsonify({"response": "Ongeldig verzoek."}), 400
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    """Return JSON instead of HTML for not-found errors."""
+    return jsonify({"response": "Pagina niet gevonden."}), 404
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    """Return JSON instead of HTML for method-not-allowed errors."""
+    return jsonify({"response": "Methode niet toegestaan."}), 405
+
+
 @app.errorhandler(500)
 def handle_500(e):
     """Return JSON instead of HTML for internal server errors."""
@@ -639,7 +657,7 @@ def _handle_chat(request_id: str) -> Response:
                 if ESCALATION_METHOD == "zendesk":
                     result = escalation_client.create_ticket(name, email, original_q, chat_history)
                 else:
-                    result = escalation_client.send_email(name, email, original_q, chat_history)
+                    result = escalation_client.send_email_async(name, email, original_q, chat_history)
             except Exception as exc:
                 logger.error("Escalation failed with unhandled error: %s", exc)
                 result = None

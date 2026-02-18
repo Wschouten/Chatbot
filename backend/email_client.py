@@ -3,6 +3,7 @@ import logging
 import os
 import smtplib
 import socket
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Any, Optional
@@ -119,3 +120,24 @@ class EmailClient:
         except OSError as e:
             logger.error("Network Error sending email: %s", e)
             return None
+
+    def send_email_async(
+        self,
+        name: str,
+        requester_email: str,
+        question: str,
+        session_history: Optional[list[dict[str, str]]] = None
+    ) -> dict[str, Any]:
+        """Queue an escalation email to be sent in a background thread.
+
+        Returns immediately with a success result. The actual SMTP send
+        happens in a daemon thread so it doesn't block the HTTP response.
+        """
+        thread = threading.Thread(
+            target=self.send_email,
+            args=(name, requester_email, question, session_history),
+            daemon=True,
+        )
+        thread.start()
+        subject = f"Chatbot Query from {name}"
+        return {"ticket": {"id": "EMAIL-QUEUED", "subject": subject}}

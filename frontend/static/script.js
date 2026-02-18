@@ -163,7 +163,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 session_id: sessionId
             })
         })
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Server returned an error. Please try again.');
+                }
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned an unexpected response. Please try again.');
+                }
+                return response.json();
+            })
             .then(data => {
                 removeTyping(loadingId);
                 if (data.response) {
@@ -175,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(error => {
                 console.error('Error:', error);
                 removeTyping(loadingId);
-                appendMessage(`Connection Error: ${error.message || error}. Please try refreshing the page.`, 'bot');
+                appendMessage(error.message || 'Connection error. Please try refreshing the page.', 'bot');
             });
     }
 

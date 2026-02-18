@@ -465,6 +465,13 @@
                     credentials: 'include',
                     body: JSON.stringify({ message: text, session_id: sessionId })
                 });
+                if (!response.ok) {
+                    throw new Error('Server returned an error.');
+                }
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned an unexpected response.');
+                }
                 const data = await response.json();
                 removeTyping(typingId);
                 appendMessage(data.response || 'Sorry, an error occurred. Please try again.', 'bot');
