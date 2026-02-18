@@ -61,9 +61,8 @@ class EmailClient:
         brand = get_brand_config()
         welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
 
-        body = f"Customer Name: {name}\n"
-        body += f"Customer Email: {requester_email}\n"
-        body += f"Original Question: {question}\n\n"
+        body = f"Beste GroundCoverGroup,\n\n"
+        body += f"Stuur een email naar het volgende mailadres: {requester_email}\n\n"
         body += "=" * 50 + "\n"
         body += "COMPLETE CONVERSATION HISTORY\n"
         body += "=" * 50 + "\n\n"
@@ -88,7 +87,6 @@ class EmailClient:
             "to": [self.to_email],
             "subject": subject,
             "text": body,
-            "reply_to": requester_email,
         }
 
         try:
