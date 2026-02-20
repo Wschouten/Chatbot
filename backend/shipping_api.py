@@ -74,15 +74,9 @@ class ShippingAPIClient:
                 Wachtwoord=self.api_password
             )
 
-            # Convert SOAP response to dict
-            result_data = dict(result) if hasattr(result, '__iter__') else {}
-            # Handle zeep response objects
-            if hasattr(result, 'Errorcode'):
-                error_code = result.Errorcode
-                session_id = getattr(result, 'SessionID', None)
-            else:
-                error_code = result_data.get('Errorcode', 0)
-                session_id = result_data.get('SessionID')
+            # Extract fields directly from zeep response object
+            error_code = getattr(result, 'Errorcode', 0)
+            session_id = getattr(result, 'SessionID', None)
 
             if error_code != SW_OK:
                 error_msg = getattr(result, 'Errorstring', '') or result_data.get('Errorstring', '')
