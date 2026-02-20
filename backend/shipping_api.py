@@ -79,7 +79,7 @@ class ShippingAPIClient:
             session_id = getattr(result, 'SessionID', None)
 
             if error_code != SW_OK:
-                error_msg = getattr(result, 'Errorstring', '') or result_data.get('Errorstring', '')
+                error_msg = getattr(result, 'Errorstring', '')
                 logger.error("StatusWeb auth failed (code %s): %s", error_code, error_msg)
                 raise ConnectionError(f"StatusWeb authentication failed: {error_msg}")
 
