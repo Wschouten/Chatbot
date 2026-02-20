@@ -53,8 +53,8 @@ def cleanup_old_files(directory: str, max_age_days: int) -> dict:
 
 
 def run_data_retention_cleanup(
-    sessions_dir: str = "sessions",
-    logs_dir: str = "logs",
+    sessions_dir: str = "data/sessions",
+    logs_dir: str = "data/logs",
     sessions_retention_days: int = 30,
     logs_retention_days: int = 90
 ) -> dict:

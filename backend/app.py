@@ -257,8 +257,8 @@ logger.info(rag_engine.ingest_documents())
 # GDPR: Data Retention Cleanup (runs on startup)
 # =============================================================================
 run_data_retention_cleanup(
-    sessions_dir="sessions",
-    logs_dir="logs",
+    sessions_dir="data/sessions",
+    logs_dir="data/logs",
     sessions_retention_days=int(os.getenv("DATA_RETENTION_SESSIONS_DAYS", "30")),
     logs_retention_days=int(os.getenv("DATA_RETENTION_LOGS_DAYS", "90"))
 )
@@ -408,7 +408,7 @@ if ESCALATION_METHOD == "zendesk":
 else:
     escalation_client = EmailClient()
     logger.info("Escalation method: SMTP email")
-SESSION_DIR = "sessions"
+SESSION_DIR = "data/sessions"
 if not os.path.exists(SESSION_DIR):
     os.makedirs(SESSION_DIR)
 
@@ -513,7 +513,7 @@ def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
 def _log_chat_message(session_id: str, request_id: str, user_message: str, response_text: str) -> None:
     """Log a chat message exchange to the conversation log file."""
     try:
-        log_dir = "logs"
+        log_dir = "data/logs"
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
 
@@ -826,7 +826,7 @@ def serve_portal_static(filename):
 @require_admin_key
 def admin_conversations():
     """Return all chat log files for the admin portal (requires ADMIN_API_KEY)."""
-    log_dir = "logs"
+    log_dir = "data/logs"
     conversations = []
 
     if not os.path.isdir(log_dir):

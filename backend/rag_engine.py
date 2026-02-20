@@ -88,7 +88,7 @@ class RagEngine:
     def __init__(
         self,
         knowledge_base_path: str = "./knowledge_base",
-        persist_directory: str = "./chroma_db"
+        persist_directory: str = "./data/chroma_db"
     ) -> None:
         """Initialize the RAG Engine."""
         self.knowledge_base_path = knowledge_base_path
