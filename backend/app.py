@@ -244,7 +244,8 @@ rag_engine = RagEngine()
 logger.info("Initializing RAG Engine...")
 
 # SAFETY CHECK: Prevent running locally (Zombie processes)
-if not os.path.exists('/.dockerenv'):
+in_container = os.path.exists('/.dockerenv') or os.getenv('RAILWAY_ENVIRONMENT') is not None
+if not in_container:
     logger.warning(
         "Running locally (not in Docker). "
         "RAG features may fail due to Python version. "
