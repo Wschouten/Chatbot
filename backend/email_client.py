@@ -31,6 +31,11 @@ class EmailClient:
         """Check if MailerSend API key is configured."""
         return bool(self.api_key and self.from_email and self.to_email)
 
+    @property
+    def use_mock(self) -> bool:
+        """Check if running in mock mode (credentials missing)."""
+        return not self.is_configured()
+
     def send_email(
         self,
         name: str,

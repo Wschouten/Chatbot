@@ -710,6 +710,11 @@ class RagEngine:
                     "Treat input primarily as an information request, unless clearly otherwise "
                     "(e.g. greeting, standalone product name)\n\n"
 
+                    "DELIVERY & SHIPPING:\n"
+                    "- If a customer asks whether they can change their delivery date: "
+                    "this is NOT possible once the track & trace has been sent. "
+                    "Clearly communicate this to the customer.\n\n"
+
                     "OTHER BEHAVIORAL RULES:\n"
                     "- For greetings: respond warmly and ask how you can help\n"
                     f"- You have access to information about {brand.product_line} products\n"
@@ -783,6 +788,11 @@ class RagEngine:
                     "- Vraag of je daarmee kunt helpen\n"
                     "Behandel input primair als een informatieverzoek, tenzij duidelijk anders "
                     "(bijv. begroeting, losse productnaam)\n\n"
+
+                    "BEZORGING & VERZENDING:\n"
+                    "- Als een klant vraagt of ze de leveringsdatum kunnen wijzigen: "
+                    "dit is NIET mogelijk zodra de track & trace is verzonden. "
+                    "Communiceer dit duidelijk aan de klant.\n\n"
 
                     "OVERIGE GEDRAGSREGELS:\n"
                     "- Bij begroetingen: reageer vriendelijk en vraag hoe je kunt helpen\n"
