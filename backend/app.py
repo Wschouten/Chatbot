@@ -237,6 +237,12 @@ MAX_MESSAGE_LENGTH = 1000
 VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
 LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
+TRACKING_INTENT_RE = re.compile(
+    r'\b(waar is|status van|wanneer komt|hoe laat komt|mijn (pakket|bestelling|zending|order|bezorging|levering)'
+    r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
+    re.IGNORECASE
+)
+POSTCODE_RE = re.compile(r'\b(\d{4}\s?[A-Za-z]{2})\b')
 
 # Initialize RAG Engine
 rag_engine = RagEngine()
@@ -682,68 +688,118 @@ def _handle_chat(request_id: str) -> Response:
             return jsonify({"response": resp, "request_id": request_id})
 
 
-    # Check if user is responding to a pending order confirmation
-    if state_data.get('awaiting_order_confirmation'):
-        # Check for timeout (5 minutes)
-        confirmation_time = state_data.get('confirmation_timestamp')
-        if confirmation_time:
-            ts = datetime.datetime.fromisoformat(confirmation_time)
-            if datetime.datetime.now() - ts > datetime.timedelta(minutes=5):
-                # Timeout - clear stale confirmation state
-                state_data.pop('awaiting_order_confirmation', None)
-                state_data.pop('pending_order_id', None)
-                state_data.pop('confirmation_timestamp', None)
-                save_session_state(session_id, state_data)
-                # Fall through to normal processing (don't treat as confirmation)
-            else:
-                # Not timed out - process confirmation response
+    # -------------------------------------------------------------------------
+    # Shipping tracking state machine (two-step: shipment number → postcode)
+    # -------------------------------------------------------------------------
+
+    def _tracking_timeout(ts_str: str) -> bool:
+        """Return True if the tracking state timestamp is older than 5 minutes."""
+        try:
+            ts = datetime.datetime.fromisoformat(ts_str)
+            return datetime.datetime.now() - ts > datetime.timedelta(minutes=5)
+        except (ValueError, TypeError):
+            return True
+
+    def _clear_tracking_state() -> None:
+        for key in ('awaiting_order_number', 'awaiting_postcode', 'pending_order_id',
+                    'pending_postcode', 'tracking_timestamp'):
+            state_data.pop(key, None)
+        save_session_state(session_id, state_data)
+
+    # Step 2 of 2: we have the order number, waiting for postcode
+    if state_data.get('awaiting_postcode'):
+        if _tracking_timeout(state_data.get('tracking_timestamp', '')):
+            _clear_tracking_state()
+            # Fall through to normal processing
+        else:
+            postcode_match = POSTCODE_RE.search(user_message)
+            if postcode_match:
                 order_id = state_data.get('pending_order_id')
+                postcode = postcode_match.group(1).upper().replace(' ', '')
+                _clear_tracking_state()
 
-                # User confirmed (yes/ja/correct/klopt/inderdaad)
-                if re.search(r'\b(ja|yes|correct|klopt|inderdaad)\b', user_message.lower()):
-                    client = get_shipping_client()
-                    result = client.get_shipment_status(order_id)
+                client = get_shipping_client()
+                result = client.get_shipment_status(order_id)
 
-                    # Clear confirmation state
-                    state_data.pop('awaiting_order_confirmation', None)
-                    state_data.pop('pending_order_id', None)
-                    state_data.pop('confirmation_timestamp', None)
-                    save_session_state(session_id, state_data)
+                if result["success"]:
+                    response_text = format_shipping_response(result, order_id)
+                else:
+                    response_text = f"❌ {result.get('error', 'Kon tracking info niet ophalen.')}"
 
-                    if result["success"]:
-                        response_text = format_shipping_response(result, order_id)
-                    else:
-                        response_text = f"❌ {result.get('error', 'Kon tracking info niet ophalen.')}"
+                _log_chat_message(session_id, request_id, user_message, response_text)
+                return jsonify({"response": response_text, "request_id": request_id})
+            else:
+                # Didn't look like a postcode — ask again
+                user_lang = state_data.get('language', 'nl')
+                if user_lang == 'en':
+                    response_text = "That doesn't look like a valid postcode. Please enter your delivery postcode (e.g. **1234 AB**)."
+                else:
+                    response_text = "Dat lijkt geen geldige postcode. Vul je bezorgpostcode in (bijv. **1234 AB**)."
+                _log_chat_message(session_id, request_id, user_message, response_text)
+                return jsonify({"response": response_text, "request_id": request_id})
 
-                    _log_chat_message(session_id, request_id, user_message, response_text)
-                    return jsonify({"response": response_text, "request_id": request_id})
+    # Step 1 of 2: we asked for the shipment number, waiting for user to provide it
+    if state_data.get('awaiting_order_number'):
+        if _tracking_timeout(state_data.get('tracking_timestamp', '')):
+            _clear_tracking_state()
+            # Fall through to normal processing
+        else:
+            number_match = re.search(r'\b(\d{6,})\b', user_message)
+            if number_match:
+                order_id = number_match.group(1)
+                state_data.pop('awaiting_order_number', None)
+                state_data['awaiting_postcode'] = True
+                state_data['pending_order_id'] = order_id
+                state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+                save_session_state(session_id, state_data)
 
-                # User declined (nee/no/nope/incorrect/verkeerd)
-                elif re.search(r'\b(nee|no|nope|incorrect|verkeerd)\b', user_message.lower()):
-                    state_data.pop('awaiting_order_confirmation', None)
-                    state_data.pop('pending_order_id', None)
-                    state_data.pop('confirmation_timestamp', None)
-                    save_session_state(session_id, state_data)
+                user_lang = state_data.get('language', 'nl')
+                if user_lang == 'en':
+                    response_text = f"Got it, shipment **#{order_id}**. What is the **delivery postcode** for this order?"
+                else:
+                    response_text = f"Begrepen, zending **#{order_id}**. Wat is de **bezorgpostcode** van deze bestelling?"
+                _log_chat_message(session_id, request_id, user_message, response_text)
+                return jsonify({"response": response_text, "request_id": request_id})
+            else:
+                # No number found — ask again
+                user_lang = state_data.get('language', 'nl')
+                if user_lang == 'en':
+                    response_text = "I didn't find a shipment number in your message. Please enter your **shipment number** (digits only, e.g. **4208323215**)."
+                else:
+                    response_text = "Ik zie geen zendingnummer in je bericht. Vul je **zendingnummer** in (alleen cijfers, bijv. **4208323215**)."
+                _log_chat_message(session_id, request_id, user_message, response_text)
+                return jsonify({"response": response_text, "request_id": request_id})
 
-                    response_text = "Oké, geen probleem! Wat is je correcte bestelnummer?"
-                    _log_chat_message(session_id, request_id, user_message, response_text)
-                    return jsonify({"response": response_text, "request_id": request_id})
-
-    # Detect potential order/zending number in message
+    # Detect order number mentioned directly in the message
     # Supports: order, bestelling, bestellingnummer, zending, zendingnummer
     order_match = re.search(r'(?:order|bestelling(?:nummer)?|zending(?:nummer)?)\s*#?\s*(\d+)', user_message.lower())
 
     if order_match:
         order_id = order_match.group(1)
-
-        # Set confirmation state with timestamp
-        state_data['awaiting_order_confirmation'] = True
+        state_data['awaiting_postcode'] = True
         state_data['pending_order_id'] = order_id
-        state_data['confirmation_timestamp'] = datetime.datetime.now().isoformat()
+        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
-        # Ask for confirmation
-        response_text = f"Wil je de status opvragen van zending **#{order_id}**? (Antwoord met 'ja' of 'nee')"
+        user_lang = state_data.get('language', 'nl')
+        if user_lang == 'en':
+            response_text = f"I found shipment **#{order_id}**. What is the **delivery postcode** for this order?"
+        else:
+            response_text = f"Ik zie zending **#{order_id}**. Wat is de **bezorgpostcode** van deze bestelling?"
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        return jsonify({"response": response_text, "request_id": request_id})
+
+    # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
+    if TRACKING_INTENT_RE.search(user_message):
+        state_data['awaiting_order_number'] = True
+        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+        save_session_state(session_id, state_data)
+
+        user_lang = state_data.get('language', 'nl')
+        if user_lang == 'en':
+            response_text = "I can look that up for you! What is your **shipment number**? You can find it in your order confirmation email."
+        else:
+            response_text = "Dat kan ik voor je opzoeken! Wat is je **zendingnummer**? Je vindt dit in de bevestigingsmail van je bestelling."
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
