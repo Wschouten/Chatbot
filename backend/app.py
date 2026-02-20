@@ -243,6 +243,19 @@ TRACKING_INTENT_RE = re.compile(
     re.IGNORECASE
 )
 POSTCODE_RE = re.compile(r'\b(\d{4}\s?[A-Za-z]{2})\b')
+HUMAN_ESCALATION_RE = re.compile(
+    # Dutch: medewerker/collega spreken|praten
+    r'(medewerker|collega)\s+(spreken|praten)'
+    r'|(spreken|praten)\s+met\s+een?\s+(medewerker|collega|mens|persoon)'
+    r'|wil\s+een?\s+(medewerker|collega|mens)'
+    r'|mag\s+ik\s+een?\s+(medewerker|collega|mens|persoon)'
+    r'|menselijke\s+hulp|doorverbinden\s+met'
+    # English: speak/talk to a human/agent/person
+    r'|speak\s+(to|with)\s+(a\s+)?(human|person|agent|representative|someone)'
+    r'|talk\s+(to|with)\s+(a\s+)?(human|person|agent|representative|someone)'
+    r'|human\s+(agent|support|representative)|real\s+person|live\s+(agent|chat|support)',
+    re.IGNORECASE
+)
 
 # Initialize RAG Engine
 rag_engine = RagEngine()
@@ -806,6 +819,27 @@ def _handle_chat(request_id: str) -> Response:
             response_text = "I can look that up for you! What is your **shipment number**? You can find it in your order confirmation email."
         else:
             response_text = "Dat kan ik voor je opzoeken! Wat is je **zendingnummer**? Je vindt dit in de bevestigingsmail van je bestelling."
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        return jsonify({"response": response_text, "request_id": request_id})
+
+    # Detect explicit human escalation request (pre-RAG, deterministic)
+    if HUMAN_ESCALATION_RE.search(user_message):
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        state_data['state'] = 'awaiting_name'
+        state_data['question'] = user_message
+        state_data['language'] = detected_lang
+        save_session_state(session_id, state_data)
+
+        if detected_lang == 'nl':
+            response_text = (
+                "Natuurlijk! Ik breng je graag in contact met een collega. "
+                "Wat is je naam?"
+            )
+        else:
+            response_text = (
+                "Of course! I'd be happy to connect you with a colleague. "
+                "What's your name?"
+            )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 

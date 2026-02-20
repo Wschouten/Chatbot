@@ -529,7 +529,31 @@ class RagEngine:
             personality = brand.personality_nl
             emoji_hint = "Gebruik af en toe een emoji om het gesprek warm te houden (🌱, 👍, 🤔). " if brand.use_emojis else ""
 
+        if language == 'en':
+            scope_rule = (
+                f"CRITICAL SCOPE RULE: You are a customer service assistant for {brand.name}. "
+                f"You ONLY answer questions about {brand.relevant_topics}. "
+                "For ANY question outside this scope — including general knowledge, geography, history, "
+                "science, politics, or any other topic unrelated to our products — "
+                "you MUST respond with EXACTLY: __UNKNOWN__\n"
+                "Do NOT answer off-topic questions, even if you know the answer.\n"
+                "If the user asks to speak with a human, representative, colleague or agent:\n"
+                "-> respond with EXACTLY: __HUMAN_REQUESTED__\n\n"
+            )
+        else:
+            scope_rule = (
+                f"KRITISCHE SCOPEREGEL: Je bent een klantenservice-assistent voor {brand.name}. "
+                f"Je beantwoordt UITSLUITEND vragen over {brand.relevant_topics}. "
+                "Voor ELKE vraag buiten dit onderwerp — inclusief algemene kennis, aardrijkskunde, "
+                "geschiedenis, wetenschap, politiek of elk ander onderwerp dat niets met onze producten "
+                "te maken heeft — MOET je antwoorden met PRECIES: __UNKNOWN__\n"
+                "Beantwoord geen off-topic vragen, ook niet als je het antwoord weet.\n"
+                "Als de gebruiker vraagt om contact met een medewerker, mens, collega of vertegenwoordiger:\n"
+                "-> antwoord met PRECIES: __HUMAN_REQUESTED__\n\n"
+            )
+
         system_prompt = (
+            f"{scope_rule}"
             f"{personality}\n\n"
             f"{emoji_hint}"
         )
@@ -830,7 +854,11 @@ class RagEngine:
                 system_prompt += (
                     "\nYou are a helpful customer service representative. "
                     "The knowledge base is currently unavailable, but you have the conversation history. "
-                    "Use the conversation history to maintain context and provide helpful responses.\n\n"
+                    "Use the conversation history to maintain context and provide helpful responses.\n"
+                    "The CRITICAL SCOPE RULE above still applies: respond with __UNKNOWN__ for any "
+                    "question outside our product topics, even when using conversation history.\n"
+                    "ESCALATION: If the user asks to speak with a human, representative or colleague:\n"
+                    "-> respond with EXACTLY: __HUMAN_REQUESTED__\n\n"
                     "CONVERSATION CONTINUITY (CRITICAL):\n"
                     "- Read the conversation history carefully\n"
                     "- If you discussed a product earlier in this conversation, NEVER deny that\n"
@@ -844,7 +872,11 @@ class RagEngine:
                 system_prompt += (
                     "\nJe bent een vriendelijke klantenservice medewerker. "
                     "De kennisbank is momenteel niet beschikbaar, maar je hebt de gespreksgeschiedenis. "
-                    "Gebruik de gespreksgeschiedenis om context te behouden en behulpzame antwoorden te geven.\n\n"
+                    "Gebruik de gespreksgeschiedenis om context te behouden en behulpzame antwoorden te geven.\n"
+                    "De KRITISCHE SCOPEREGEL hierboven geldt nog steeds: antwoord met __UNKNOWN__ voor "
+                    "vragen buiten onze producttopics, ook bij gebruik van gespreksgeschiedenis.\n"
+                    "ESCALATIE: Vraagt de gebruiker om contact met een medewerker, mens of collega?\n"
+                    "-> antwoord met PRECIES: __HUMAN_REQUESTED__\n\n"
                     "CONVERSATIE CONTINUÏTEIT (KRITIEK):\n"
                     "- Lees de conversatie geschiedenis aandachtig\n"
                     "- Als je eerder in dit gesprek al over een product hebt gepraat, ontken dat NOOIT\n"
