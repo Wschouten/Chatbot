@@ -17,6 +17,9 @@ COPY backend/requirements.txt /app/requirements.txt
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install gosu for privilege dropping at container startup
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+
 # Copy the current directory contents into the container at /app
 COPY . /app
 
@@ -43,15 +46,14 @@ EXPOSE 5000
 # Run commands from the backend directory context
 WORKDIR /app/backend
 
-# =============================================================================
-# SECURITY: Run as non-root user
-# =============================================================================
-USER appuser
-
 # Health check
 HEALTHCHECK --interval=2m --timeout=10s --start-period=2m --retries=3 \
     CMD python -c "import urllib.request, os; urllib.request.urlopen(f'http://localhost:{os.environ.get(\"PORT\", \"5000\")}/health')" || exit 1
 
-# Run with gunicorn for production serving
-CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout 120 --access-logfile - app:app"]
+# =============================================================================
+# SECURITY: Start as root to fix volume permissions, then drop to appuser
+# Railway mounts volumes as root-owned, so we must chown at runtime before
+# switching to the non-root appuser via gosu.
+# =============================================================================
+CMD ["sh", "-c", "mkdir -p /app/backend/data/sessions /app/backend/data/logs /app/backend/data/chroma_db && chown -R appuser:appgroup /app/backend/data && exec gosu appuser gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout 120 --access-logfile - app:app"]
 
