@@ -872,7 +872,7 @@ def _handle_chat(request_id: str) -> Response:
     # Check for Unknown Signal - generate helpful response instead of immediate handoff
     elif "__UNKNOWN__" in response_text:
         # Generate a helpful response that doesn't immediately push to human handoff
-        response_text = rag_engine.generate_helpful_unknown_response(user_message, detected_lang)
+        response_text = rag_engine.generate_helpful_unknown_response(user_message, detected_lang, chat_history)
 
         # Stay in inactive state - user can ask for human help if they want
         # The system prompt already tells the bot to respond with __HUMAN_REQUESTED__

@@ -1082,21 +1082,29 @@ class RagEngine:
             logger.error("Error detecting language: %s", e)
             return 'nl'  # Default to Dutch on error
 
-    def generate_helpful_unknown_response(self, question: str, language: str = 'nl') -> str:
+    def generate_helpful_unknown_response(
+        self,
+        question: str,
+        language: str = 'nl',
+        chat_history: Optional[list[dict[str, str]]] = None
+    ) -> str:
         """Generate a helpful response when we don't have specific info.
 
         Instead of immediately offering human handoff, this generates a response that:
         1. Acknowledges what the user asked
-        2. Explains what we know related to the topic
+        2. Explains what we know related to the topic (within brand scope only)
         3. Asks a clarifying question or offers alternative help
 
         Args:
             question: The user's original question
             language: 'nl' for Dutch, 'en' for English
+            chat_history: Optional conversation history for context
 
         Returns:
             A helpful response string
         """
+        brand = get_brand_config()
+
         if not self.openai_client:
             # Fallback if no client
             if language == 'nl':
@@ -1112,33 +1120,39 @@ class RagEngine:
         try:
             if language == 'nl':
                 system_prompt = (
-                    "Je bent een vriendelijke klantenservice medewerker. "
+                    f"Je bent een vriendelijke klantenservice medewerker van {brand.name}. "
                     "De klant stelde een vraag waar je geen specifiek antwoord op hebt. "
+                    f"Je helpt UITSLUITEND met vragen over {brand.relevant_topics}. "
                     "Genereer een korte, behulpzame reactie die:\n"
                     "1. Erkent dat je die specifieke info niet hebt\n"
-                    "2. Iets nuttigs deelt als je dat wel weet (algemene info over het onderwerp)\n"
+                    "2. Alleen relevante info deelt als die betrekking heeft op onze producten/diensten "
+                    "— deel GEEN algemene kennis over andere onderwerpen\n"
                     "3. Een vervolgvraag stelt of alternatieven biedt\n"
                     "4. NIET direct een collega of menselijke hulp aanbiedt - dat is laatste optie\n\n"
                     "Houd het kort (2-3 zinnen max). Wees conversationeel, niet formeel."
                 )
             else:
                 system_prompt = (
-                    "You are a friendly customer service agent. "
+                    f"You are a friendly customer service agent for {brand.name}. "
                     "The customer asked a question you don't have specific info for. "
+                    f"You ONLY assist with questions about {brand.relevant_topics}. "
                     "Generate a short, helpful response that:\n"
                     "1. Acknowledges you don't have that specific info\n"
-                    "2. Shares something useful if you know related info\n"
+                    "2. Only shares info relevant to our products/services "
+                    "— do NOT share general knowledge about other topics\n"
                     "3. Asks a follow-up question or offers alternatives\n"
                     "4. Does NOT immediately offer human help - that's a last resort\n\n"
                     "Keep it brief (2-3 sentences max). Be conversational, not formal."
                 )
 
+            messages: list[dict[str, str]] = [{"role": "system", "content": system_prompt}]
+            if chat_history:
+                messages.extend(chat_history[-6:])
+            messages.append({"role": "user", "content": question})
+
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Klant vraagt: {question}"}
-                ],
+                messages=messages,
                 temperature=0.7,
                 max_completion_tokens=150
             )
