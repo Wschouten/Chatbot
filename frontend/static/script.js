@@ -194,12 +194,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // =============================================================================
-    // Helper: Append Message (XSS-safe with innerText)
+    // Helper: Safe markdown renderer for bot messages
+    // Escapes HTML first (XSS prevention), then applies safe transformations.
+    // =============================================================================
+    function renderBotMessage(text) {
+        const escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+        return escaped
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+                '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+            .replace(/\n/g, '<br>');
+    }
+
+    // =============================================================================
+    // Helper: Append Message
+    // Bot messages are rendered with safe markdown; user messages use innerText.
     // =============================================================================
     function appendMessage(text, sender) {
         const msgDiv = document.createElement('div');
         msgDiv.classList.add('message', sender === 'user' ? 'user-message' : 'bot-message');
-        msgDiv.innerText = text; // innerText is safer than innerHTML
+        if (sender === 'bot') {
+            msgDiv.innerHTML = renderBotMessage(text);
+        } else {
+            msgDiv.innerText = text;
+        }
         chatBody.appendChild(msgDiv);
         scrollToBottom();
     }

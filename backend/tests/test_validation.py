@@ -2,6 +2,7 @@
 import pytest
 import sys
 import os
+from unittest.mock import patch
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -87,19 +88,32 @@ class TestShippingApi:
     """Tests for shipping API."""
 
     def test_valid_order_id(self):
-        """Test shipping status with valid order ID."""
+        """Test shipping status with valid order ID (forces mock mode)."""
+        import shipping_api as _sa
         from shipping_api import get_shipment_status
 
-        result = get_shipment_status("12345")
+        with patch.dict(os.environ, {'SHIPPING_API_KEY': ''}):
+            _sa._shipping_client = None
+            result = get_shipment_status("12345")
+            _sa._shipping_client = None
         assert "12345" in result
-        assert "Status" in result
+        assert "onderweg" in result
 
     def test_empty_order_id(self):
-        """Test shipping status with empty order ID."""
-        from shipping_api import get_shipment_status
+        """Test shipping status with empty order ID returns invalid-input error."""
+        import shipping_api as _sa
+        from shipping_api import get_shipment_status, ShippingAPIClient
+        from unittest.mock import MagicMock
 
-        result = get_shipment_status("")
-        assert "valid Order ID" in result
+        with patch.dict(os.environ, {'SHIPPING_API_KEY': 'dummy-key-for-test'}):
+            _sa._shipping_client = None
+            # Patch auth and SOAP so no network calls are made;
+            # float("") raises ValueError before any SOAP method is invoked.
+            with patch.object(ShippingAPIClient, '_get_session_id', return_value='dummy-session'), \
+                 patch.object(ShippingAPIClient, '_get_soap_client', return_value=MagicMock()):
+                result = get_shipment_status("")
+            _sa._shipping_client = None
+        assert "geldig zendingnummer" in result
 
 
 class TestZendeskClient:

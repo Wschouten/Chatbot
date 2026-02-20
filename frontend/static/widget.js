@@ -417,11 +417,31 @@
             }
         }
 
-        // Append message (XSS-safe)
+        // Safe markdown renderer for bot messages.
+        // Escapes HTML first (XSS prevention), then applies safe transformations.
+        function renderBotMessage(text) {
+            const escaped = text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+            return escaped
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+                    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+                .replace(/\n/g, '<br>');
+        }
+
+        // Append message. Bot messages use safe markdown rendering;
+        // user messages use textContent (no HTML ever).
         function appendMessage(text, sender) {
             const msgDiv = document.createElement('div');
             msgDiv.className = 'gc-message ' + (sender === 'user' ? 'gc-user-message' : 'gc-bot-message');
-            msgDiv.textContent = text;
+            if (sender === 'bot') {
+                msgDiv.innerHTML = renderBotMessage(text);
+            } else {
+                msgDiv.textContent = text;
+            }
             chatBody.appendChild(msgDiv);
             chatBody.scrollTop = chatBody.scrollHeight;
         }

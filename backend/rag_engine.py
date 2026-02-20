@@ -705,8 +705,7 @@ class RagEngine:
                     "If the user asks to speak with a representative, human or colleague:\n"
                     "-> respond with EXACTLY: __HUMAN_REQUESTED__\n"
                     f"If the question is not about {brand.relevant_topics}:\n"
-                    "- Kindly mention that is your area of expertise\n"
-                    "- Ask if you can help with that instead\n"
+                    "-> respond with EXACTLY: __UNKNOWN__\n"
                     "Treat input primarily as an information request, unless clearly otherwise "
                     "(e.g. greeting, standalone product name)\n\n"
 
@@ -784,8 +783,7 @@ class RagEngine:
                     "Vraagt de gebruiker om contact met een medewerker, mens of collega?\n"
                     "-> antwoord met PRECIES: __HUMAN_REQUESTED__\n"
                     f"Gaat de vraag niet over {brand.relevant_topics}?\n"
-                    "- Zeg vriendelijk dat je daarin gespecialiseerd bent\n"
-                    "- Vraag of je daarmee kunt helpen\n"
+                    "-> antwoord met PRECIES: __UNKNOWN__\n"
                     "Behandel input primair als een informatieverzoek, tenzij duidelijk anders "
                     "(bijv. begroeting, losse productnaam)\n\n"
 

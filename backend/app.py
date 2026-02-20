@@ -10,7 +10,7 @@ import uuid
 from functools import wraps
 from typing import Any
 
-from flask import Flask, render_template, request, jsonify, Response, g, send_from_directory
+from flask import Flask, render_template, request, jsonify, Response, g, send_from_directory, redirect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_cors import CORS
@@ -299,6 +299,12 @@ def serve_widget():
     # Allow loading from any origin (widget needs to load on Shopify)
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
+
+
+@app.route('/privacy')
+def privacy_redirect():
+    """Redirect to the external privacy policy page."""
+    return redirect('https://www.boomschors.nl/policies/privacy-policy', code=301)
 
 
 @app.route('/health')
@@ -977,7 +983,7 @@ def get_single_conversation(session_id):
         return jsonify({"error": "Invalid session ID"}), 400
 
     # Step 2: Load chat log file
-    log_path = os.path.join("logs", f"chat_{safe_id}.json")
+    log_path = os.path.join("data", "logs", f"chat_{safe_id}.json")
     if not os.path.exists(log_path):
         return jsonify({"error": "Conversation not found"}), 404
 

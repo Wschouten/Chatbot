@@ -10,20 +10,12 @@ services:
     volumes:
       # Map the knowledge base so you can drop files in locally and they appear in the container
       - ./backend/knowledge_base:/app/backend/knowledge_base
-      # Map the chroma_db so memory persists after restart
-      - ./backend/chroma_db:/app/backend/chroma_db
       # [NEW] Map Source Code for Instant Updates (Hot Reloading)
       - ./backend:/app/backend
       - ./frontend:/app/frontend
       - ./portal:/app/portal
-      # Sessions directory with proper permissions (overrides the bind mount)
-      - sessions_data:/app/backend/sessions
-      # Logs directory with proper permissions
-      - logs_data:/app/backend/logs
-      # Portal SQLite database (Feature 30g)
+      # All persistent data (sessions, logs, chroma_db, portal.db) lives here
       - portal_data:/app/backend/data
 
 volumes:
-  sessions_data:
-  logs_data:
   portal_data:
