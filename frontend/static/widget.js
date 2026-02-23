@@ -350,6 +350,25 @@
     // =============================================================================
     function initChat() {
         const toggleBtn = document.getElementById('gc-toggle-btn');
+
+        // Force exact dimensions via JS — overrides any Shopify theme button styles
+        [
+            ['width',         '60px'],
+            ['height',        '60px'],
+            ['min-height',    'unset'],
+            ['max-height',    'unset'],
+            ['min-width',     'unset'],
+            ['max-width',     'unset'],
+            ['padding',       '0'],
+            ['padding-top',   '0'],
+            ['padding-right', '0'],
+            ['padding-bottom','0'],
+            ['padding-left',  '0'],
+            ['box-sizing',    'border-box'],
+            ['border-radius', '50%'],
+            ['line-height',   '1'],
+        ].forEach(([prop, val]) => toggleBtn.style.setProperty(prop, val, 'important'));
+
         const widget = document.getElementById('gc-chat-widget');
         const closeBtn = widget.querySelector('.gc-close-btn');
         const chatBody = document.getElementById('gc-body');
