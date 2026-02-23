@@ -54,21 +54,26 @@
             box-sizing: border-box;
         }
         #gc-toggle-btn {
-            position: fixed;
-            ${CONFIG.position.includes('left') ? 'left: 20px;' : 'right: 20px;'}
-            bottom: 20px;
-            background-color: var(--gc-primary);
-            border: none;
-            border-radius: 50%;
-            width: 60px;
-            height: 60px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: transform 0.2s, box-shadow 0.2s;
-            z-index: 2147483646;
+            position: fixed !important;
+            ${CONFIG.position.includes('left') ? 'left: 20px !important;' : 'right: 20px !important;'}
+            bottom: 20px !important;
+            background-color: var(--gc-primary) !important;
+            border: none !important;
+            border-radius: 50% !important;
+            width: 60px !important;
+            height: 60px !important;
+            min-height: unset !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-sizing: border-box !important;
+            cursor: pointer !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            line-height: 1 !important;
+            transition: transform 0.2s, box-shadow 0.2s !important;
+            z-index: 2147483646 !important;
         }
         #gc-toggle-btn:hover {
             transform: scale(1.05);
