@@ -238,7 +238,9 @@ VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
 LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
 TRACKING_INTENT_RE = re.compile(
-    r'\b(waar is|status van|wanneer komt|hoe laat komt|mijn (pakket|bestelling|zending|order|bezorging|levering)'
+    r'\b(waar is|status van|wanneer komt|wanneer wordt|hoe laat komt'
+    r'|mijn (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|bezorgd worden|wanneer bezorgd|wordt bezorgd'
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
     re.IGNORECASE
 )
