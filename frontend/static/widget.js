@@ -378,6 +378,49 @@
         const consentOverlay = document.getElementById('gc-consent');
         const acceptBtn = document.getElementById('gc-accept');
         const declineBtn = document.getElementById('gc-decline');
+        const headerInfo = widget.querySelector('.gc-header-info');
+
+        // Force send button to exact circle — override Shopify theme button styles
+        [
+            ['width',         '40px'],
+            ['height',        '40px'],
+            ['min-height',    'unset'],
+            ['max-height',    'unset'],
+            ['min-width',     'unset'],
+            ['max-width',     'unset'],
+            ['padding',       '0'],
+            ['padding-top',   '0'],
+            ['padding-right', '0'],
+            ['padding-bottom','0'],
+            ['padding-left',  '0'],
+            ['box-sizing',    'border-box'],
+            ['border-radius', '50%'],
+            ['line-height',   '1'],
+            ['flex-shrink',   '0'],
+        ].forEach(([prop, val]) => sendBtn.style.setProperty(prop, val, 'important'));
+
+        // Force close button size and remove Shopify padding
+        [
+            ['padding',       '0'],
+            ['padding-top',   '0'],
+            ['padding-right', '0'],
+            ['padding-bottom','0'],
+            ['padding-left',  '0'],
+            ['font-size',     '24px'],
+            ['line-height',   '1'],
+            ['width',         'auto'],
+            ['height',        'auto'],
+            ['min-height',    'unset'],
+            ['background',    'none'],
+            ['border',        'none'],
+        ].forEach(([prop, val]) => closeBtn.style.setProperty(prop, val, 'important'));
+
+        // Force header text to readable size
+        [
+            ['font-size',   '15px'],
+            ['font-weight', '500'],
+            ['line-height', '1.2'],
+        ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
 
         let isOpen = false;
         let sessionId = null;
