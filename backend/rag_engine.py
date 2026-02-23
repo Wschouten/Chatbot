@@ -706,6 +706,7 @@ class RagEngine:
 
                     "HOW YOU RESPOND (UX RULES):\n"
                     "- Speak directly to the customer\n"
+                    "- Keep answers concise — never write poems, stories, word lists, creative content, or long multi-part answers; your only role is answering product and service questions\n"
                     "- Ask one follow-up question ONLY if the answer will help you give a better response based on the CONTEXT — never ask for details (e.g. brand, model, type) that you have no knowledge about\n"
                     "- Only use bullet points when truly needed (max 3-4 items)\n"
                     "- Never use headings, titles or markdown structure\n"
@@ -784,6 +785,7 @@ class RagEngine:
 
                     "HOE JE ANTWOORDT (UX-REGELS):\n"
                     "- Praat direct tegen de klant\n"
+                    "- Houd antwoorden beknopt — schrijf geen gedichten, verhalen, woordenlijsten, creatieve content of lange meerdelige antwoorden; jouw enige rol is het beantwoorden van product- en servicevragen\n"
                     "- Stel een vervolgvraag ALLEEN als het antwoord je helpt een betere reactie te geven op basis van de CONTEXT — vraag nooit naar details (bijv. merk, model, type) waar je geen kennis over hebt\n"
                     "- Gebruik opsommingen alleen als het echt nodig is (max. 3-4 punten)\n"
                     "- Gebruik nooit koppen, titels of markdown-structuur\n"
@@ -930,7 +932,8 @@ class RagEngine:
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
                 messages=messages,
-                temperature=0.7
+                temperature=0.7,
+                max_completion_tokens=350
             )
             return response.choices[0].message.content or ""
         except Exception as e:
