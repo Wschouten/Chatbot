@@ -706,7 +706,7 @@ class RagEngine:
 
                     "HOW YOU RESPOND (UX RULES):\n"
                     "- Speak directly to the customer\n"
-                    "- Ask one follow-up question if relevant\n"
+                    "- Ask one follow-up question ONLY if the answer will help you give a better response based on the CONTEXT — never ask for details (e.g. brand, model, type) that you have no knowledge about\n"
                     "- Only use bullet points when truly needed (max 3-4 items)\n"
                     "- Never use headings, titles or markdown structure\n"
                     "- No verbatim quotes from the CONTEXT\n"
@@ -784,7 +784,7 @@ class RagEngine:
 
                     "HOE JE ANTWOORDT (UX-REGELS):\n"
                     "- Praat direct tegen de klant\n"
-                    "- Stel indien zinvol één vervolgvraag\n"
+                    "- Stel een vervolgvraag ALLEEN als het antwoord je helpt een betere reactie te geven op basis van de CONTEXT — vraag nooit naar details (bijv. merk, model, type) waar je geen kennis over hebt\n"
                     "- Gebruik opsommingen alleen als het echt nodig is (max. 3-4 punten)\n"
                     "- Gebruik nooit koppen, titels of markdown-structuur\n"
                     "- Geen letterlijke citaten uit de CONTEXT\n"
