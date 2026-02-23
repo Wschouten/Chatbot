@@ -379,6 +379,8 @@
         const acceptBtn = document.getElementById('gc-accept');
         const declineBtn = document.getElementById('gc-decline');
         const headerInfo = widget.querySelector('.gc-header-info');
+        const chatHeader = widget.querySelector('.gc-chat-header');
+        const headerText = widget.querySelector('.gc-header-info span:last-child');
 
         // Force send button to exact circle — override Shopify theme button styles
         [
@@ -399,28 +401,54 @@
             ['flex-shrink',   '0'],
         ].forEach(([prop, val]) => sendBtn.style.setProperty(prop, val, 'important'));
 
-        // Force close button size and remove Shopify padding
+
+        // Fix header container flex layout (Shopify overrides justify-content/flex-direction)
+        [
+            ['display',          'flex'],
+            ['flex-direction',   'row'],
+            ['justify-content',  'space-between'],
+            ['align-items',      'center'],
+            ['flex-wrap',        'nowrap'],
+            ['gap',              '0'],
+        ].forEach(([prop, val]) => chatHeader.style.setProperty(prop, val, 'important'));
+
+        // Fix header-info row layout
+        [
+            ['display',        'flex'],
+            ['flex-direction', 'row'],
+            ['align-items',    'center'],
+            ['flex-wrap',      'nowrap'],
+            ['gap',            '8px'],
+            ['font-size',      '15px'],
+            ['font-weight',    '500'],
+            ['line-height',    '1.2'],
+        ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
+
+        // Prevent header text from wrapping to a second line
+        [
+            ['white-space',  'nowrap'],
+            ['overflow',     'hidden'],
+            ['text-overflow','ellipsis'],
+            ['font-size',    '15px'],
+        ].forEach(([prop, val]) => headerText.style.setProperty(prop, val, 'important'));
+
+        // Fix close button — push to right corner, remove Shopify sizing
         [
             ['padding',       '0'],
             ['padding-top',   '0'],
             ['padding-right', '0'],
             ['padding-bottom','0'],
             ['padding-left',  '0'],
+            ['margin-left',   'auto'],
             ['font-size',     '24px'],
             ['line-height',   '1'],
             ['width',         'auto'],
             ['height',        'auto'],
             ['min-height',    'unset'],
+            ['flex-shrink',   '0'],
             ['background',    'none'],
             ['border',        'none'],
         ].forEach(([prop, val]) => closeBtn.style.setProperty(prop, val, 'important'));
-
-        // Force header text to readable size
-        [
-            ['font-size',   '15px'],
-            ['font-weight', '500'],
-            ['line-height', '1.2'],
-        ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
 
         let isOpen = false;
         let sessionId = null;
