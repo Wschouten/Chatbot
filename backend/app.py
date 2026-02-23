@@ -784,9 +784,9 @@ def _handle_chat(request_id: str) -> Response:
                 # No number found — ask again
                 user_lang = state_data.get('language', 'nl')
                 if user_lang == 'en':
-                    response_text = "I didn't find a shipment number in your message. Please enter your **shipment number** (digits only, e.g. **4208323215**)."
+                    response_text = "I didn't find a shipment number in your message. Please enter your **shipment number** (digits only, e.g. **1234567890**)."
                 else:
-                    response_text = "Ik zie geen zendingnummer in je bericht. Vul je **zendingnummer** in (alleen cijfers, bijv. **4208323215**)."
+                    response_text = "Ik zie geen zendingnummer in je bericht. Vul je **zendingnummer** in (alleen cijfers, bijv. **1234567890**)."
                 _log_chat_message(session_id, request_id, user_message, response_text)
                 return jsonify({"response": response_text, "request_id": request_id})
 
