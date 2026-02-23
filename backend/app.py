@@ -736,7 +736,6 @@ def _handle_chat(request_id: str) -> Response:
             postcode_match = POSTCODE_RE.search(user_message)
             if postcode_match:
                 order_id = state_data.get('pending_order_id')
-                postcode = postcode_match.group(1).upper().replace(' ', '')
                 _clear_tracking_state()
 
                 client = get_shipping_client()
@@ -776,9 +775,9 @@ def _handle_chat(request_id: str) -> Response:
 
                 user_lang = state_data.get('language', 'nl')
                 if user_lang == 'en':
-                    response_text = f"Got it, shipment **#{order_id}**. What is the **delivery postcode** for this order?"
+                    response_text = "Thanks. What is the **delivery postcode** for this order?"
                 else:
-                    response_text = f"Begrepen, zending **#{order_id}**. Wat is de **bezorgpostcode** van deze bestelling?"
+                    response_text = "Bedankt. Wat is de **bezorgpostcode** van deze bestelling?"
                 _log_chat_message(session_id, request_id, user_message, response_text)
                 return jsonify({"response": response_text, "request_id": request_id})
             else:
@@ -804,9 +803,9 @@ def _handle_chat(request_id: str) -> Response:
 
         user_lang = state_data.get('language', 'nl')
         if user_lang == 'en':
-            response_text = f"I found shipment **#{order_id}**. What is the **delivery postcode** for this order?"
+            response_text = "Thanks. What is the **delivery postcode** for this order?"
         else:
-            response_text = f"Ik zie zending **#{order_id}**. Wat is de **bezorgpostcode** van deze bestelling?"
+            response_text = "Bedankt. Wat is de **bezorgpostcode** van deze bestelling?"
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
