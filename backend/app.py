@@ -727,6 +727,14 @@ def _handle_chat(request_id: str) -> Response:
             state_data.pop(key, None)
         save_session_state(session_id, state_data)
 
+    def _reset_to_awaiting_order_number() -> None:
+        """Reset to step 1 of tracking flow so the user can re-enter the shipment number."""
+        for key in ('awaiting_postcode', 'pending_order_id', 'pending_postcode'):
+            state_data.pop(key, None)
+        state_data['awaiting_order_number'] = True
+        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+        save_session_state(session_id, state_data)
+
     # Step 2 of 2: we have the order number, waiting for postcode
     if state_data.get('awaiting_postcode'):
         if _tracking_timeout(state_data.get('tracking_timestamp', '')):
@@ -736,14 +744,34 @@ def _handle_chat(request_id: str) -> Response:
             postcode_match = POSTCODE_RE.search(user_message)
             if postcode_match:
                 order_id = state_data.get('pending_order_id')
-                _clear_tracking_state()
+                user_lang = state_data.get('language', 'nl')
 
                 client = get_shipping_client()
                 result = client.get_shipment_status(order_id)
 
                 if result["success"]:
+                    _clear_tracking_state()
                     response_text = format_shipping_response(result, order_id)
+                elif result["status"] == "not_found":
+                    _reset_to_awaiting_order_number()
+                    if user_lang == 'en':
+                        response_text = f"❌ Shipment number **#{order_id}** was not found. Please check your order confirmation email and enter the correct number."
+                    else:
+                        response_text = f"❌ Zendingnummer **#{order_id}** is niet gevonden. Controleer je bevestigingsmail en voer het juiste nummer in."
+                elif result["status"] == "invalid_number":
+                    _reset_to_awaiting_order_number()
+                    if user_lang == 'en':
+                        response_text = "That doesn't look like a valid shipment number. Shipment numbers consist of digits only. Please try again."
+                    else:
+                        response_text = "Dat ziet er niet uit als een geldig zendingnummer. Zendingnummers bestaan alleen uit cijfers. Probeer het opnieuw."
+                elif result["status"] == "no_status":
+                    _clear_tracking_state()
+                    if user_lang == 'en':
+                        response_text = f"✅ Shipment **#{order_id}** is registered, but no status is available yet. This can happen shortly after the order is placed — please check again later."
+                    else:
+                        response_text = f"✅ Zendingnummer **#{order_id}** is gevonden, maar er is nog geen statusinformatie beschikbaar. Dit kan voorkomen vlak na het aanmaken van de zending — probeer het later opnieuw."
                 else:
+                    _clear_tracking_state()
                     response_text = f"❌ {result.get('error', 'Kon tracking info niet ophalen.')}"
 
                 _log_chat_message(session_id, request_id, user_message, response_text)
@@ -817,9 +845,9 @@ def _handle_chat(request_id: str) -> Response:
 
         user_lang = state_data.get('language', 'nl')
         if user_lang == 'en':
-            response_text = "I can look that up for you! What is your **shipment number**? You can find it in your order confirmation email."
+            response_text = "I can look that up for you! What is your **shipment number**? You can find it in your order confirmation email. It consists of digits only."
         else:
-            response_text = "Dat kan ik voor je opzoeken! Wat is je **zendingnummer**? Je vindt dit in de bevestigingsmail van je bestelling."
+            response_text = "Dat kan ik voor je opzoeken! Wat is je **zendingnummer**? Je vindt dit in de bevestigingsmail van je bestelling. Het bestaat alleen uit cijfers."
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
