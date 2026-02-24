@@ -743,6 +743,11 @@ class RagEngine:
                     "this is NOT possible once the track & trace has been sent. "
                     "Clearly communicate this to the customer.\n\n"
 
+                    "PRICING & DISCOUNTS:\n"
+                    "- If a customer asks about extra discounts for buying in bulk or large quantities: "
+                    "explain that GroundCoverGroup does not offer additional discounts on our products. "
+                    "This is because GroundCoverGroup already works with very competitive prices.\n\n"
+
                     "OTHER BEHAVIORAL RULES:\n"
                     "- For greetings: respond warmly and ask how you can help\n"
                     f"- You have access to information about {brand.product_line} products\n"
@@ -825,6 +830,11 @@ class RagEngine:
                     "- Als een klant vraagt of ze de leveringsdatum kunnen wijzigen: "
                     "dit is NIET mogelijk zodra de track & trace is verzonden. "
                     "Communiceer dit duidelijk aan de klant.\n\n"
+
+                    "PRIJZEN & KORTINGEN:\n"
+                    "- Als een klant vraagt of er extra korting mogelijk is bij het afnemen van grote hoeveelheden: "
+                    "leg uit dat de GroundCoverGroup geen extra korting geeft op onze producten. "
+                    "Dit komt omdat de GroundCoverGroup al erg scherp geprijsd is.\n\n"
 
                     "OVERIGE GEDRAGSREGELS:\n"
                     "- Bij begroetingen: reageer vriendelijk en vraag hoe je kunt helpen\n"
