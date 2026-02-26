@@ -747,7 +747,10 @@ class RagEngine:
                     "DELIVERY & SHIPPING:\n"
                     "- If a customer asks whether they can change their delivery date: "
                     "this is NOT possible once the track & trace has been sent. "
-                    "Clearly communicate this to the customer.\n\n"
+                    "Clearly communicate this to the customer.\n"
+                    "- NEVER ask for a postcode or other details to look up shipping costs or delivery times — "
+                    "you CANNOT look this up. Refer the customer directly to the webshop or call 0342–784000 "
+                    "for this information.\n\n"
 
                     "PRICING & DISCOUNTS:\n"
                     "- If a customer asks about extra discounts for buying in bulk or large quantities: "
@@ -841,7 +844,10 @@ class RagEngine:
                     "BEZORGING & VERZENDING:\n"
                     "- Als een klant vraagt of ze de leveringsdatum kunnen wijzigen: "
                     "dit is NIET mogelijk zodra de track & trace is verzonden. "
-                    "Communiceer dit duidelijk aan de klant.\n\n"
+                    "Communiceer dit duidelijk aan de klant.\n"
+                    "- Vraag NOOIT naar de postcode of andere gegevens om bezorgkosten of levertijden op te zoeken — "
+                    "je kunt dit NIET opzoeken. Verwijs de klant direct door naar de webshop of naar "
+                    "telefoonnummer 0342–784000 voor deze informatie.\n\n"
 
                     "PRIJZEN & KORTINGEN:\n"
                     "- Als een klant vraagt of er extra korting mogelijk is bij het afnemen van grote hoeveelheden: "
