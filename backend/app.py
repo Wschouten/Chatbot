@@ -22,6 +22,7 @@ from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
+from exact200_client import verify_order as verify_exact200_order
 import admin_db
 from pathlib import Path
 
@@ -258,6 +259,53 @@ HUMAN_ESCALATION_RE = re.compile(
     r'|human\s+(agent|support|representative)|real\s+person|live\s+(agent|chat|support)',
     re.IGNORECASE
 )
+
+# Dutch month name → number mapping for date parsing
+_NL_MONTHS = {
+    'januari': 1, 'jan': 1,
+    'februari': 2, 'feb': 2,
+    'maart': 3, 'mrt': 3,
+    'april': 4, 'apr': 4,
+    'mei': 5,
+    'juni': 6, 'jun': 6,
+    'juli': 7, 'jul': 7,
+    'augustus': 8, 'aug': 8,
+    'september': 9, 'sep': 9, 'sept': 9,
+    'oktober': 10, 'okt': 10, 'oct': 10,
+    'november': 11, 'nov': 11,
+    'december': 12, 'dec': 12,
+}
+
+
+def _parse_order_date(text: str):
+    """Parse a user-provided date string and return 'YYYY-MM-DD', or None."""
+    text = text.strip().lower()
+
+    # Numeric: dd-mm-yyyy, dd/mm/yyyy, d-m-yyyy, d/m/yy, etc.
+    m = re.search(r'(\d{1,2})[-/\.](\d{1,2})[-/\.](\d{2,4})', text)
+    if m:
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if year < 100:
+            year += 2000
+        try:
+            return datetime.date(year, month, day).strftime('%Y-%m-%d')
+        except ValueError:
+            pass
+
+    # Natural language: "15 januari 2025" or "15 jan 2025"
+    m = re.search(r'(\d{1,2})\s+([a-zé]+)\s+(\d{4})', text)
+    if m:
+        day = int(m.group(1))
+        month = _NL_MONTHS.get(m.group(2))
+        year = int(m.group(3))
+        if month:
+            try:
+                return datetime.date(year, month, day).strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+
+    return None
+
 
 # Initialize RAG Engine
 rag_engine = RagEngine()
@@ -735,6 +783,107 @@ def _handle_chat(request_id: str) -> Response:
         state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
+    def _clear_verification_state() -> None:
+        for key in ('awaiting_verification_date', 'awaiting_verification_email',
+                    'pending_verification_date', 'verification_timestamp'):
+            state_data.pop(key, None)
+        save_session_state(session_id, state_data)
+
+    # -------------------------------------------------------------------------
+    # Exact 200 pre-verification state machine (two-step: date → email)
+    # Runs BEFORE the shipping state machine so the email is never seen by the
+    # escalation or RAG logic.
+    # -------------------------------------------------------------------------
+
+    # Step 2 of 2 (verification): date stored, waiting for email address
+    if state_data.get('awaiting_verification_email'):
+        if _tracking_timeout(state_data.get('verification_timestamp', '')):
+            _clear_verification_state()
+            # Fall through to normal processing
+        else:
+            user_lang = state_data.get('language', 'nl')
+            email_input = user_message.strip()
+            if is_valid_email(email_input):
+                order_date = state_data.get('pending_verification_date', '')
+                if verify_exact200_order(order_date, email_input):
+                    _clear_verification_state()
+                    state_data['awaiting_order_number'] = True
+                    state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+                    save_session_state(session_id, state_data)
+                    if user_lang == 'en':
+                        response_text = (
+                            "✅ Order verified! What is your **shipment number**? "
+                            "You can find it in your order confirmation email. It consists of digits only."
+                        )
+                    else:
+                        response_text = (
+                            "✅ Bestelling geverifieerd! Wat is je **zendingnummer**? "
+                            "Je vindt dit in de bevestigingsmail van je bestelling. Het bestaat alleen uit cijfers."
+                        )
+                else:
+                    _clear_verification_state()
+                    if user_lang == 'en':
+                        response_text = (
+                            "❌ No order was found in our system with this combination of "
+                            "order date and email address. Please check your details and try again."
+                        )
+                    else:
+                        response_text = (
+                            "❌ Geen bestelling gevonden in het systeem met deze combinatie van "
+                            "besteldatum en e-mailadres. Controleer je gegevens en probeer het opnieuw."
+                        )
+            else:
+                # Invalid email format — ask again
+                if user_lang == 'en':
+                    response_text = (
+                        "That doesn't look like a valid email address. "
+                        "Please enter the email address you used when placing the order (e.g. **name@example.com**)."
+                    )
+                else:
+                    response_text = (
+                        "Dat lijkt geen geldig e-mailadres. "
+                        "Vul het e-mailadres in waarmee je de bestelling hebt geplaatst (bijv. **naam@voorbeeld.nl**)."
+                    )
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            return jsonify({"response": response_text, "request_id": request_id})
+
+    # Step 1 of 2 (verification): waiting for order date
+    if state_data.get('awaiting_verification_date'):
+        if _tracking_timeout(state_data.get('verification_timestamp', '')):
+            _clear_verification_state()
+            # Fall through to normal processing
+        else:
+            user_lang = state_data.get('language', 'nl')
+            parsed_date = _parse_order_date(user_message)
+            if parsed_date:
+                state_data.pop('awaiting_verification_date', None)
+                state_data['awaiting_verification_email'] = True
+                state_data['pending_verification_date'] = parsed_date
+                state_data['verification_timestamp'] = datetime.datetime.now().isoformat()
+                save_session_state(session_id, state_data)
+                if user_lang == 'en':
+                    response_text = (
+                        "Thanks. What is the **email address** you used when placing the order?"
+                    )
+                else:
+                    response_text = (
+                        "Bedankt. Wat is het **e-mailadres** waarmee je de bestelling hebt geplaatst?"
+                    )
+            else:
+                # Could not parse date — ask again
+                if user_lang == 'en':
+                    response_text = (
+                        "I couldn't recognise that as a date. "
+                        "Please enter the order date as **day-month-year** (e.g. **15-01-2025**)."
+                    )
+                else:
+                    response_text = (
+                        "Ik kon dat niet herkennen als een datum. "
+                        "Vul de besteldatum in als **dag-maand-jaar** (bijv. **15-01-2025**)."
+                    )
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            return jsonify({"response": response_text, "request_id": request_id})
+
     # Step 2 of 2: we have the order number, waiting for postcode
     if state_data.get('awaiting_postcode'):
         if _tracking_timeout(state_data.get('tracking_timestamp', '')):
@@ -820,34 +969,50 @@ def _handle_chat(request_id: str) -> Response:
 
     # Detect order number mentioned directly in the message
     # Supports: order, bestelling, bestellingnummer, zending, zendingnummer
+    # Even when the user already mentions their order number we still require
+    # the Exact 200 pre-verification step before revealing shipment information.
     order_match = re.search(r'(?:order|bestelling(?:nummer)?|zending(?:nummer)?)\s*#?\s*(\d+)', user_message.lower())
 
     if order_match:
-        order_id = order_match.group(1)
-        state_data['awaiting_postcode'] = True
-        state_data['pending_order_id'] = order_id
-        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        state_data['language'] = detected_lang
+        state_data['awaiting_verification_date'] = True
+        state_data['verification_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
-        user_lang = state_data.get('language', 'nl')
-        if user_lang == 'en':
-            response_text = "Thanks. What is the **delivery postcode** for this order?"
+        if detected_lang == 'en':
+            response_text = (
+                "I can look that up! To verify your order first, what is the **order date**? "
+                "(e.g. **15-01-2025**)"
+            )
         else:
-            response_text = "Bedankt. Wat is de **bezorgpostcode** van deze bestelling?"
+            response_text = (
+                "Dat kan ik voor je opzoeken! Om je bestelling te verifiëren, wat is de **besteldatum**? "
+                "(bijv. **15-01-2025**)"
+            )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
     if TRACKING_INTENT_RE.search(user_message):
-        state_data['awaiting_order_number'] = True
-        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        state_data['language'] = detected_lang
+        state_data['awaiting_verification_date'] = True
+        state_data['verification_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
-        user_lang = state_data.get('language', 'nl')
-        if user_lang == 'en':
-            response_text = "I can look that up for you! What is your **shipment number**? You can find it in your order confirmation email. It consists of digits only."
+        if detected_lang == 'en':
+            response_text = (
+                "I can look that up! To keep your shipment information secure, "
+                "I first need to verify your order. "
+                "What is the **order date**? (e.g. **15-01-2025**)"
+            )
         else:
-            response_text = "Dat kan ik voor je opzoeken! Wat is je **zendingnummer**? Je vindt dit in de bevestigingsmail van je bestelling. Het bestaat alleen uit cijfers."
+            response_text = (
+                "Dat kan ik voor je opzoeken! Om je zendingsinformatie te beveiligen, "
+                "verifieer ik eerst je bestelling. "
+                "Wat is de **besteldatum**? (bijv. **15-01-2025**)"
+            )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 

@@ -137,6 +137,42 @@ PRODUCTION READINESS (independent track):
                   51 (cleanup) ──┘  (parallel)
 ```
 
-**Total remaining effort:** ~3.5 hours
+**Total remaining effort:** ~3.5 hours (deployment) + ~7-8 hours (post-launch)
 **Critical path (deployment):** 36 → 37 → 41 → 43 → 44 → 45 → 46
 **Critical path (production readiness):** 47 → 48 → 49
+
+---
+
+## Post-Launch Improvements (Features 52-59)
+
+Improvements to implement after the chatbot is live. Features 52, 55, 57, 58, 59 can start immediately (no dependency on go-live). Features 53 and 54 require the production deployment to be running.
+
+| Feature | Name | Status | Effort | Dependencies | Blocks |
+|---------|------|--------|--------|--------------|--------|
+| **52** | [Delete Conversations](52-delete-conversations.md) | 📋 Todo | ~1h | None | 56 |
+| **53** | [Uptime Monitoring Setup](53-uptime-monitoring.md) | 📋 Todo | ~15 min | Feature 46 (go-live) | — |
+| **54** | [Shipping API Live Integration](54-shipping-api-live.md) | 🚫 Blocked | ~30 min | Feature 46 + StatusWeb IP whitelist | — |
+| **55** | [Automated Backend Tests](55-automated-tests.md) | 📋 Todo | ~2-3h | None | — |
+| **56** | [Bulk Conversation Operations](56-bulk-conversation-operations.md) | 📋 Todo | ~2h | Feature 52 | — |
+| **57** | [Knowledge Base Update Workflow](57-knowledge-base-workflow.md) | 📋 Todo | ~1h | None | — |
+| **58** | [Analytics Dashboard Enhancements](58-analytics-enhancements.md) | 📋 Todo | ~2-3h | None | — |
+| **59** | [Database Backup & Restore](59-database-backup.md) | 📋 Todo | ~30 min | None | — |
+
+### Dependency Diagram (Post-Launch)
+
+```
+PARALLEL (can start any time):
+├─→ 52 (Delete Conversations) ──→ 56 (Bulk Operations)
+├─→ 55 (Automated Tests)
+├─→ 57 (Knowledge Base Workflow)
+├─→ 58 (Analytics Enhancements)
+└─→ 59 (DB Backup & Restore)
+
+AFTER go-live (Feature 46):
+├─→ 53 (Uptime Monitoring)
+└─→ 54 (Shipping API Live) ← also needs StatusWeb IP whitelist
+```
+
+**Total effort:** ~7-8 hours
+**Recommended first:** 52 (high-value, low-effort admin portal improvement) + 53 (5 min setup, production safety) + 59 (data protection)
+**Can be parallel:** 52, 55, 57, 58, 59 have no dependencies and can all be worked on simultaneously
