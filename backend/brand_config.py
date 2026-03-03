@@ -43,8 +43,8 @@ class BrandConfig:
         relevant_topics = os.environ.get("BRAND_RELEVANT_TOPICS", default_topics)
 
         # Default welcome messages with brand interpolation
-        default_welcome_nl = f"Hallo! Ik ben de {assistant_name} assistent. Hoe kan ik je helpen?"
-        default_welcome_en = f"Hello! I'm the {assistant_name} assistant. How can I help you?"
+        default_welcome_nl = f"Hallo! Hoe kan ik je helpen vandaag?"
+        default_welcome_en = f"Hello! How can I help you today?"
 
         welcome_nl = os.environ.get("BRAND_WELCOME_NL", default_welcome_nl)
         welcome_en = os.environ.get("BRAND_WELCOME_EN", default_welcome_en)
