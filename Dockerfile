@@ -55,5 +55,5 @@ HEALTHCHECK --interval=2m --timeout=10s --start-period=2m --retries=3 \
 # Railway mounts volumes as root-owned, so we must chown at runtime before
 # switching to the non-root appuser via gosu.
 # =============================================================================
-CMD ["sh", "-c", "mkdir -p /app/backend/data/sessions /app/backend/data/logs /app/backend/data/chroma_db && chown -R appuser:appgroup /app/backend/data && exec gosu appuser gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --timeout 120 --access-logfile - app:app"]
+CMD ["sh", "-c", "mkdir -p /app/backend/data/sessions /app/backend/data/logs /app/backend/data/chroma_db && chown -R appuser:appgroup /app/backend/data && exec gosu appuser gunicorn --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 4 --timeout 120 --access-logfile - app:app"]
 
