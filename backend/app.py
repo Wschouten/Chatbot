@@ -240,12 +240,22 @@ LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
 TRACKING_INTENT_RE = re.compile(
     r'\b(waar is|status van|wanneer komt|wanneer wordt|hoe laat komt'
+    r'|hoe laat komen|wanneer komen jullie|komen brengen|zouden.*brengen'
+    r'|vandaag.*lever|vandaag.*bezorg|vandaag.*brengen'
+    r'|hoe laat.*lever|hoe laat.*bezorg'
     r'|mijn (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
     r'|bezorgd worden|wanneer bezorgd|wordt bezorgd'
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
     re.IGNORECASE
 )
 POSTCODE_RE = re.compile(r'\b(\d{4}\s?[A-Za-z]{2})\b')
+CLOSING_RE = re.compile(
+    r'^\s*(?:dankjewel|dankje|bedankt|dank u wel|dank je wel|prima|top|goed zo|'
+    r'ok(?:é|e)?|helemaal goed|dat hoeft niet|laat maar|niet nodig|'
+    r'thanks?|thank you|no\s+thanks?|no\s+need|that\'?s\s+(?:all|fine|ok)|'
+    r'great|perfect|alright|got it)\b[!.,]?\s*$',
+    re.IGNORECASE
+)
 # Detects when user says they don't have / can't provide the requested number
 NO_SHIPMENT_NUMBER_RE = re.compile(
     r'\b(geen|heb\s+geen|heb\s+het\s+niet|weet\s+het\s+niet|niet\s+bij\s+de\s+hand'
@@ -773,8 +783,8 @@ def _handle_chat(request_id: str) -> Response:
 
     def _clear_shopify_verification_state() -> None:
         """Clear all Shopify order verification state keys from the session."""
-        for key in ('awaiting_shopify_order_number', 'awaiting_shopify_email',
-                    'pending_shopify_order_number', 'pending_shopify_email',
+        for key in ('awaiting_shopify_order_number', 'awaiting_shopify_postcode',
+                    'pending_shopify_order_number',
                     'shopify_verification_timestamp'):
             state_data.pop(key, None)
         save_session_state(session_id, state_data)
@@ -792,16 +802,16 @@ def _handle_chat(request_id: str) -> Response:
                 order_number = order_num_match.group(1)
                 state_data.pop('awaiting_shopify_order_number', None)
                 state_data['pending_shopify_order_number'] = order_number
-                state_data['awaiting_shopify_email'] = True
+                state_data['awaiting_shopify_postcode'] = True
                 state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
                 save_session_state(session_id, state_data)
                 if user_lang == 'en':
                     response_text = (
-                        "Thanks. What is the **email address** you used when placing the order?"
+                        "Thanks. What is the **postcode** of the delivery address?"
                     )
                 else:
                     response_text = (
-                        "Bedankt. Wat is het **e-mailadres** waarmee je de bestelling hebt geplaatst?"
+                        "Bedankt. Wat is de **postcode** van het afleveradres?"
                     )
             else:
                 if user_lang == 'en':
@@ -817,80 +827,45 @@ def _handle_chat(request_id: str) -> Response:
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
-    # WISMO step 2 of 2: order number stored, waiting for email address
-    if state_data.get('awaiting_shopify_email'):
+    # WISMO step 2 of 2: order number stored, waiting for postcode
+    if state_data.get('awaiting_shopify_postcode'):
         if _tracking_timeout(state_data.get('shopify_verification_timestamp', '')):
             _clear_shopify_verification_state()
             # Fall through to normal processing
         else:
             user_lang = state_data.get('language', 'nl')
-            email_input = user_message.strip()
-            if is_valid_email(email_input):
-                state_data['pending_shopify_email'] = email_input
+            postcode_match = POSTCODE_RE.search(user_message.strip())
+            if postcode_match:
+                _clear_shopify_verification_state()
+                state_data['awaiting_order_number'] = True
+                state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
                 save_session_state(session_id, state_data)
-
-                # Call Zapier to verify order number + email (Feature 63)
-                shopify_order_number = state_data.get('pending_shopify_order_number', '')
-                zapier_result = _call_zapier_wismo(shopify_order_number, email_input)
-                outcome = zapier_result.get('outcome', 'error')
-
-                _clear_shopify_verification_state()  # always clear regardless of outcome
-
-                if outcome == 'ok':
-                    state_data['awaiting_order_number'] = True
-                    state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
-                    save_session_state(session_id, state_data)
-                    if user_lang == 'en':
-                        response_text = (
-                            "✅ Thank you, I found your order! "
-                            "To retrieve the exact delivery time from our carrier, "
-                            "I need your **shipment tracking number**. "
-                            "(You should have received this separately by email.) "
-                            "What is your **shipment number**?"
-                        )
-                    else:
-                        response_text = (
-                            "✅ Bedankt, ik heb je bestelling gevonden! "
-                            "Om de exacte levertijd bij de vervoerder op te halen, "
-                            "heb ik je **zendingnummer** nodig. "
-                            "(Dit heb je apart per e-mail ontvangen.) "
-                            "Wat is je **zendingnummer**?"
-                        )
-                elif outcome == 'not_found':
-                    if user_lang == 'en':
-                        response_text = (
-                            "❌ Unfortunately I cannot find an order in our system that matches "
-                            "this email address and order number. "
-                            "Could you double-check your details and try again?"
-                        )
-                    else:
-                        response_text = (
-                            "❌ Helaas kan ik geen bestelling vinden die overeenkomt met dit "
-                            "e-mailadres en bestelnummer. "
-                            "Kun je je gegevens controleren en opnieuw proberen?"
-                        )
-                else:  # 'error' — webhook unreachable, timeout, misconfigured
-                    if user_lang == 'en':
-                        response_text = (
-                            "I'm unable to verify your order right now due to a technical issue. "
-                            "Please contact our customer service team for assistance."
-                        )
-                    else:
-                        response_text = (
-                            "Het is momenteel niet mogelijk om je bestelling te verifiëren vanwege "
-                            "een technisch probleem. "
-                            "Neem contact op met onze klantenservice voor hulp."
-                        )
-            else:
                 if user_lang == 'en':
                     response_text = (
-                        "That doesn't look like a valid email address. "
-                        "Please enter the email address you used when placing the order (e.g. **name@example.com**)."
+                        "✅ Thank you, I found your order! "
+                        "To retrieve the exact delivery time from our carrier, "
+                        "I need your **shipment tracking number**. "
+                        "(You should have received this separately by email.) "
+                        "What is your **shipment number**?"
                     )
                 else:
                     response_text = (
-                        "Dat lijkt geen geldig e-mailadres. "
-                        "Vul het e-mailadres in waarmee je de bestelling hebt geplaatst (bijv. **naam@voorbeeld.nl**)."
+                        "✅ Bedankt, ik heb je bestelling gevonden! "
+                        "Om de exacte levertijd bij de vervoerder op te halen, "
+                        "heb ik je **zendingnummer** nodig. "
+                        "(Dit heb je apart per e-mail ontvangen.) "
+                        "Wat is je **zendingnummer**?"
+                    )
+            else:
+                if user_lang == 'en':
+                    response_text = (
+                        "That doesn't look like a valid postcode. "
+                        "Please enter a Dutch postcode (e.g. **1234 AB**)."
+                    )
+                else:
+                    response_text = (
+                        "Dat lijkt geen geldige postcode. "
+                        "Vul een Nederlandse postcode in (bijv. **1234 AB**)."
                     )
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
@@ -989,17 +964,17 @@ def _handle_chat(request_id: str) -> Response:
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
         state_data['pending_shopify_order_number'] = order_match.group(1)
-        state_data['awaiting_shopify_email'] = True
+        state_data['awaiting_shopify_postcode'] = True
         state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
         if detected_lang == 'en':
             response_text = (
-                "I can look that up! What is the **email address** you used when placing the order?"
+                "I can look that up! What is the **postcode** of the delivery address?"
             )
         else:
             response_text = (
-                "Dat kan ik voor je opzoeken! Wat is het **e-mailadres** waarmee je de bestelling hebt geplaatst?"
+                "Dat kan ik voor je opzoeken! Wat is de **postcode** van het afleveradres?"
             )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
@@ -1045,6 +1020,30 @@ def _handle_chat(request_id: str) -> Response:
             )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
+
+    # Closing/farewell detection — skip RAG, reply with short canned response
+    if CLOSING_RE.match(user_message.strip()):
+        consecutive_closings = state_data.get('consecutive_closings', 0) + 1
+        state_data['consecutive_closings'] = consecutive_closings
+        user_lang = state_data.get('language', 'nl')
+        save_session_state(session_id, state_data)
+        if consecutive_closings >= 2:
+            response_text = "Goed, succes! 👋" if user_lang == 'nl' else "Great, good luck! 👋"
+        else:
+            response_text = (
+                "Graag gedaan! Mocht je later nog vragen hebben, dan help ik je graag."
+                if user_lang == 'nl' else
+                "You're welcome! Feel free to ask if you have more questions."
+            )
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        chat_history.append({"role": "user", "content": user_message})
+        chat_history.append({"role": "assistant", "content": response_text})
+        state_data['chat_history'] = chat_history[-10:]
+        save_session_state(session_id, state_data)
+        return jsonify({"response": response_text, "request_id": request_id})
+
+    # Reset closing counter on a real message
+    state_data.pop('consecutive_closings', None)
 
     # Feature 15: Detect language BEFORE RAG call so we can translate queries
     detected_lang = rag_engine.detect_language(user_message)
