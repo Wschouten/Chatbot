@@ -238,6 +238,16 @@ MAX_MESSAGE_LENGTH = 1000
 VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
 LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
+PRE_PURCHASE_RE = re.compile(
+    r'\b(als ik (?:\w+\s+){0,5}bestel'
+    r'|als ik (een )?bestelling (zou )?plaatsen'
+    r'|wanneer kan ik (het )?verwachten als'
+    r'|indien ik bestel'
+    r'|if i (place an? )?order'
+    r'|if i (buy|purchase|order)'
+    r'|when (would|will) (it|the order) (be )?delivered if)\b',
+    re.IGNORECASE
+)
 TRACKING_INTENT_RE = re.compile(
     r'\b(waar is|status van|wanneer komt|wanneer wordt|hoe laat komt'
     r'|hoe laat komen|wanneer komen jullie|komen brengen|zouden.*brengen'
@@ -255,6 +265,14 @@ CLOSING_RE = re.compile(
     r'thanks?|thank you|no\s+thanks?|no\s+need|that\'?s\s+(?:all|fine|ok)|'
     r'great|perfect|alright|got it)\b[!.,]?\s*$',
     re.IGNORECASE
+)
+# Detects when user says they haven't ordered yet
+NO_ORDER_YET_RE = re.compile(
+    r'\b(nog geen bestell|heb nog geen|nog niet besteld|heb nog niet besteld'
+    r'|nog geen order|geen bestelling gedaan'
+    r"|haven'?t ordered|have not ordered|haven'?t placed|no order yet"
+    r'|not ordered yet|not placed yet)\b',
+    re.IGNORECASE,
 )
 # Detects when user says they don't have / can't provide the requested number
 NO_SHIPMENT_NUMBER_RE = re.compile(
@@ -813,6 +831,21 @@ def _handle_chat(request_id: str) -> Response:
                     response_text = (
                         "Bedankt. Wat is de **postcode** van het afleveradres?"
                     )
+            elif NO_ORDER_YET_RE.search(user_message):
+                _clear_shopify_verification_state()
+                save_session_state(session_id, state_data)
+                if user_lang == 'en':
+                    response_text = (
+                        "No problem! Orders are typically delivered within a few working days. "
+                        "For the exact delivery time to your area, please check the webshop at checkout "
+                        "or contact us at klantenservice@groundcovergroup.nl."
+                    )
+                else:
+                    response_text = (
+                        "Geen probleem! Bestellingen worden doorgaans binnen enkele werkdagen geleverd. "
+                        "Voor de exacte levertijd naar jouw regio, check de webshop bij het afrekenen "
+                        "of neem contact op via klantenservice@groundcovergroup.nl."
+                    )
             else:
                 if user_lang == 'en':
                     response_text = (
@@ -980,7 +1013,8 @@ def _handle_chat(request_id: str) -> Response:
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
-    if TRACKING_INTENT_RE.search(user_message):
+    # Skip WISMO for pre-purchase / hypothetical questions — let RAG answer instead
+    if not PRE_PURCHASE_RE.search(user_message) and TRACKING_INTENT_RE.search(user_message):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
         state_data['awaiting_shopify_order_number'] = True
