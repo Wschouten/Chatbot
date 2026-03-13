@@ -109,26 +109,58 @@ class TestPrePurchaseBypassesWismo:
 # ---------------------------------------------------------------------------
 
 class TestTrackingQuestionTriggersWismo:
-    def test_response_asks_for_order_number(self):
+    def test_response_asks_for_shipment_number(self):
         client = _make_client()
         sid = _make_session_id()
 
         data = _post(client, "waar is mijn pakket?", sid)
 
         response = data["response"].lower()
-        assert "bestelnummer" in response or "order number" in response, (
-            "Tracking question must prompt for order/bestelnummer"
+        assert "zendingnummer" in response or "shipment number" in response, (
+            "Tracking question must prompt for zendingnummer/shipment number"
         )
 
-    def test_session_awaiting_shopify_order_number_is_set(self):
+    def test_session_awaiting_order_number_is_set(self):
         client = _make_client()
         sid = _make_session_id()
 
         _post(client, "waar is mijn pakket?", sid)
 
         session = _load_session(sid)
-        assert session.get("awaiting_shopify_order_number") is True, (
-            "Session must have awaiting_shopify_order_number=True after tracking question"
+        assert session.get("awaiting_order_number") is True, (
+            "Session must have awaiting_order_number=True after tracking question"
+        )
+
+    def test_waar_blijft_mij_zending_triggers_wismo(self):
+        """Regression: 'waar blijft' and 'mij' (informal possessive) must trigger WISMO."""
+        client = _make_client()
+        sid = _make_session_id()
+
+        data = _post(client, "Waar blijft mij zending?", sid)
+
+        response = data["response"].lower()
+        assert "zendingnummer" in response or "shipment number" in response, (
+            "'Waar blijft mij zending?' must trigger WISMO and ask for shipment number"
+        )
+        session = _load_session(sid)
+        assert session.get("awaiting_order_number") is True, (
+            "Session must have awaiting_order_number=True after 'waar blijft mij zending?'"
+        )
+
+    def test_has_shipment_number_declaration_triggers_wismo(self):
+        """Regression: 'ik heb een zendingsnummer' must trigger WISMO directly."""
+        client = _make_client()
+        sid = _make_session_id()
+
+        data = _post(client, "ik heb een zendingsnummer", sid)
+
+        response = data["response"].lower()
+        assert "zendingnummer" in response or "shipment number" in response, (
+            "'ik heb een zendingsnummer' must trigger WISMO and ask for the shipment number"
+        )
+        session = _load_session(sid)
+        assert session.get("awaiting_order_number") is True, (
+            "Session must have awaiting_order_number=True after 'ik heb een zendingsnummer'"
         )
 
 

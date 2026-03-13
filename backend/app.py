@@ -249,11 +249,12 @@ PRE_PURCHASE_RE = re.compile(
     re.IGNORECASE
 )
 TRACKING_INTENT_RE = re.compile(
-    r'\b(waar is|status van|wanneer komt|wanneer wordt|hoe laat komt'
+    r'\b(waar is|waar blijft|status van|wanneer komt|wanneer wordt|hoe laat komt'
     r'|hoe laat komen|wanneer komen jullie|komen brengen|zouden.*brengen'
     r'|vandaag.*lever|vandaag.*bezorg|vandaag.*brengen'
     r'|hoe laat.*lever|hoe laat.*bezorg'
     r'|mijn (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|mij (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
     r'|bezorgd worden|wanneer bezorgd|wordt bezorgd'
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
     re.IGNORECASE
@@ -275,6 +276,12 @@ NO_ORDER_YET_RE = re.compile(
     re.IGNORECASE,
 )
 # Detects when user says they don't have / can't provide the requested number
+HAS_SHIPMENT_NUMBER_RE = re.compile(
+    r'\b(ik heb een? (zendingnummer|zendingsnummer|trackingnummer|tracking\s*nummer|track.*trace)'
+    r"|i have (a |my )?(tracking|shipment|trace)\s*(number|code|link)"
+    r'|heb het zendingnummer|heb het trackingnummer)\b',
+    re.IGNORECASE,
+)
 NO_SHIPMENT_NUMBER_RE = re.compile(
     r'\b(geen|heb\s+geen|heb\s+het\s+niet|weet\s+het\s+niet|niet\s+bij\s+de\s+hand'
     r"|don'?t\s+have|do\s+not\s+have|haven'?t\s+got|not\s+got|no\s+shipment"
@@ -1014,22 +1021,26 @@ def _handle_chat(request_id: str) -> Response:
 
     # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
     # Skip WISMO for pre-purchase / hypothetical questions — let RAG answer instead
-    if not PRE_PURCHASE_RE.search(user_message) and TRACKING_INTENT_RE.search(user_message):
+    if not PRE_PURCHASE_RE.search(user_message) and (
+        TRACKING_INTENT_RE.search(user_message) or HAS_SHIPMENT_NUMBER_RE.search(user_message)
+    ):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
-        state_data['awaiting_shopify_order_number'] = True
-        state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
+        state_data['awaiting_order_number'] = True
+        state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
         if detected_lang == 'en':
             response_text = (
-                "I can look that up! What is your **Shopify order number**? "
-                "You can find it in your order confirmation email (e.g. **#12345**)."
+                "I can look that up! Please enter your **shipment number** "
+                "(digits only, e.g. **1234567890**). "
+                "You can find it in the shipping confirmation email."
             )
         else:
             response_text = (
-                "Dat kan ik voor je opzoeken! Wat is je **bestelnummer**? "
-                "Je vindt dit in de bevestigingsmail van je bestelling (bijv. **#12345**)."
+                "Dat kan ik voor je opzoeken! Geef je **zendingnummer** door "
+                "(alleen cijfers, bijv. **1234567890**). "
+                "Je vindt dit in de verzendbevestigingsmail."
             )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
