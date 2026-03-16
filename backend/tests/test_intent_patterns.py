@@ -16,6 +16,8 @@ from app import (
     NO_SHIPMENT_NUMBER_RE,
     HUMAN_ESCALATION_RE,
     CLOSING_RE,
+    FRUSTRATION_RE,
+    PRIOR_CONTACT_FAILED_RE,
 )
 
 
@@ -193,3 +195,71 @@ class TestClosingRE:
 
     def test_does_not_match_escalation(self):
         assert not CLOSING_RE.match("ik wil een medewerker")
+
+
+class TestFrustrationRE:
+    # --- FRUSTRATION_RE matches ---
+    def test_matches_ik_baal(self):
+        assert FRUSTRATION_RE.search("Ik baal behoorlijk van de email afhandeling")
+
+    def test_matches_belachelijk(self):
+        assert FRUSTRATION_RE.search("Dit is belachelijk, ik wacht al weken")
+
+    def test_matches_onacceptabel(self):
+        assert FRUSTRATION_RE.search("Dit is totaal onacceptabel")
+
+    def test_matches_klacht(self):
+        assert FRUSTRATION_RE.search("Ik wil een klacht indienen")
+
+    def test_matches_teleurgesteld(self):
+        assert FRUSTRATION_RE.search("Ik ben erg teleurgesteld in de service")
+
+    def test_matches_english_ridiculous(self):
+        assert FRUSTRATION_RE.search("This is ridiculous, I've been waiting forever")
+
+    def test_matches_english_unacceptable(self):
+        assert FRUSTRATION_RE.search("This is absolutely unacceptable")
+
+    def test_matches_english_complaint(self):
+        assert FRUSTRATION_RE.search("I want to file a complaint")
+
+    # --- FRUSTRATION_RE non-matches ---
+    def test_no_match_mild_jammer(self):
+        assert not FRUSTRATION_RE.search("Dat is jammer")
+
+    def test_no_match_niet_ideaal(self):
+        assert not FRUSTRATION_RE.search("Niet ideaal, maar ik begrijp het")
+
+    def test_no_match_pre_purchase(self):
+        assert not FRUSTRATION_RE.search("Als ik vandaag bestel, wanneer komt het dan?")
+
+    def test_no_match_tracking(self):
+        assert not FRUSTRATION_RE.search("Waar is mijn pakket?")
+
+
+class TestPriorContactFailedRE:
+    # --- PRIOR_CONTACT_FAILED_RE matches ---
+    def test_matches_vorige_mail(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("Mijn vorige mail is nooit beantwoord")
+
+    def test_matches_meerdere_keren_gemaild(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("Ik heb al meerdere keren gemaild")
+
+    def test_matches_geen_reactie_gekregen(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("Ik heb geen reactie gekregen op mijn mails")
+
+    def test_matches_niemand_reageert(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("Niemand reageert op mijn berichten")
+
+    def test_matches_english_previous_email(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("My previous email was ignored")
+
+    def test_matches_english_emailed_multiple_times(self):
+        assert PRIOR_CONTACT_FAILED_RE.search("I have emailed multiple times with no reply")
+
+    # --- PRIOR_CONTACT_FAILED_RE non-matches ---
+    def test_no_match_first_contact(self):
+        assert not PRIOR_CONTACT_FAILED_RE.search("Ik wil graag een retour aanvragen")
+
+    def test_no_match_tracking_question(self):
+        assert not PRIOR_CONTACT_FAILED_RE.search("Wat is mijn zendingnummer?")

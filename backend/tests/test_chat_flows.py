@@ -320,3 +320,118 @@ class TestClosingMessage:
         assert response.strip() != "", (
             "Response must not be empty"
         )
+
+
+# ---------------------------------------------------------------------------
+# Flow N: Frustration detection triggers escalation
+# ---------------------------------------------------------------------------
+
+class TestFrustrationEscalation:
+    def test_frustration_triggers_after_one_turn(self):
+        """Explicit frustration keyword after 1+ prior turns must trigger escalation."""
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {
+            "state": "inactive",
+            "language": "nl",
+            "chat_history": [
+                {"role": "user", "content": "Ik wil graag retourneren"},
+                {"role": "assistant", "content": "Neem contact op met klantenservice@example.com"},
+            ],
+        })
+
+        data = _post(client, "Ik baal behoorlijk van de email afhandeling", sid)
+
+        session = _load_session(sid)
+        assert session.get("state") == "awaiting_name", (
+            "Frustration keyword after 1+ prior turns must set state to awaiting_name"
+        )
+        assert "frustrerend" in data["response"].lower() or "frustrating" in data["response"].lower(), (
+            "Frustration escalation response must acknowledge frustration"
+        )
+        assert "naam" in data["response"].lower() or "name" in data["response"].lower(), (
+            "Frustration escalation response must ask for name"
+        )
+
+    def test_frustration_does_not_trigger_on_first_message(self):
+        """Frustration keyword as the very first message must fall through to RAG."""
+        client = _make_client()
+        sid = _make_session_id()
+        # Fresh session — no prior turns in chat_history
+
+        _post(client, "Dit is belachelijk", sid)
+
+        session = _load_session(sid)
+        assert session.get("state") != "awaiting_name", (
+            "Frustration on first message must NOT trigger escalation (guard: user_turns_so_far >= 1)"
+        )
+
+    def test_dead_end_loop_triggers_escalation(self):
+        """Three bot turns with dead-end redirects must trigger escalation on any next user message."""
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {
+            "state": "inactive",
+            "language": "nl",
+            "chat_history": [
+                {"role": "user", "content": "Ik heb een vraag"},
+                {"role": "assistant", "content": "Neem contact op met klantenservice@groundcover.nl"},
+                {"role": "user", "content": "Maar ik krijg geen antwoord"},
+                {"role": "assistant", "content": "Bel ons op 0342-784000"},
+                {"role": "user", "content": "Ik kan niet bellen"},
+                {"role": "assistant", "content": "Stuur een mail naar klantenservice@groundcover.nl"},
+            ],
+        })
+
+        data = _post(client, "Wat nu?", sid)
+
+        session = _load_session(sid)
+        assert session.get("state") == "awaiting_name", (
+            "Dead-end loop (3 bot redirects) must trigger escalation"
+        )
+        assert session.get("escalation_reason") == "loop", (
+            "escalation_reason must be 'loop' when triggered by dead-end detection"
+        )
+
+    def test_no_false_positive_mild_complaint(self):
+        """Mild dissatisfaction must NOT trigger escalation."""
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {
+            "state": "inactive",
+            "language": "nl",
+            "chat_history": [
+                {"role": "user", "content": "Wanneer komt mijn pakket?"},
+                {"role": "assistant", "content": "Dat kan ik voor je opzoeken"},
+            ],
+        })
+
+        _post(client, "Dat is jammer", sid)
+
+        session = _load_session(sid)
+        assert session.get("state") != "awaiting_name", (
+            "Mild 'dat is jammer' must NOT trigger frustration escalation"
+        )
+
+    def test_prior_contact_failed_triggers_escalation(self):
+        """User reporting unanswered prior emails must trigger escalation after 2 turns."""
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {
+            "state": "inactive",
+            "language": "nl",
+            "chat_history": [
+                {"role": "user", "content": "Ik wil retourneren"},
+                {"role": "assistant", "content": "Neem contact op met klantenservice"},
+            ],
+        })
+
+        data = _post(client, "Mijn vorige mails worden nooit beantwoord", sid)
+
+        session = _load_session(sid)
+        assert session.get("state") == "awaiting_name", (
+            "Prior-contact-failed signal must trigger escalation"
+        )
+        assert session.get("escalation_reason") == "frustration", (
+            "escalation_reason must be 'frustration' for prior-contact-failed signal"
+        )

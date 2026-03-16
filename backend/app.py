@@ -301,7 +301,38 @@ HUMAN_ESCALATION_RE = re.compile(
     r'|human\s+(agent|support|representative)|real\s+person|live\s+(agent|chat|support)',
     re.IGNORECASE
 )
-
+FRUSTRATION_RE = re.compile(
+    r'\b(ik baal\b|behoorlijk balen|heel erg balen'
+    r'|dit is belachelijk|absoluut belachelijk|volkomen belachelijk'
+    r'|ik ben niet blij|niet blij (mee|hierover|over)'
+    r'|vreselijk|vreselijk slecht'
+    r'|onacceptabel|totaal onacceptabel'
+    r'|schande|een schande'
+    r'|klacht\b|klachten\b|klacht indienen'
+    r'|teleurgesteld|erg teleurgesteld|heel teleurgesteld'
+    r'|ik ben het zat|ben er klaar mee'
+    r'|jullie luisteren niet|niemand helpt'
+    # English
+    r'|this is ridiculous|this is unacceptable|absolutely unacceptable'
+    r'|i am not happy|not satisfied|very disappointed'
+    r'|terrible service|awful service|horrible service'
+    r'|complaint\b|file a complaint)\b',
+    re.IGNORECASE,
+)
+PRIOR_CONTACT_FAILED_RE = re.compile(
+    # Dutch
+    r'(mijn\s+(vorige|eerdere)\s+(mail|e-?mail|bericht))'
+    r'|(al\s+meerdere\s+keren?\s+(gemaild|gebeld|geprobeerd|contact\s+opgenomen))'
+    r'|(geen\s+(reactie|antwoord|respons)\s+(gehad|gekregen|ontvangen))'
+    r'|(al\s+(dagen|weken)\s+(gewacht|geen\s+antwoord))'
+    r'|(niemand\s+reageert|niemand\s+antwoordt)'
+    # English
+    r'|(my\s+(previous|earlier|last)\s+(email|message))'
+    r'|(emailed?\s+(multiple|several|many)\s+times?)'
+    r'|(no\s+(response|reply|answer)\s+(at all|from you))'
+    r'|(been\s+waiting\s+(for\s+)?(days|weeks))',
+    re.IGNORECASE,
+)
 
 
 # Initialize RAG Engine
@@ -507,6 +538,30 @@ def _redact_pii_for_log(text: str) -> str:
         text
     )
     return redacted
+
+
+_DEAD_END_PATTERN = re.compile(
+    r'neem\s+contact\s+op'
+    r'|klantenservice@'
+    r'|bel\s+ons'
+    r'|stuur\s+(een\s+)?e?-?mail'
+    r'|contact\s+us'
+    r'|send\s+(an?\s+)?email'
+    r'|call\s+us',
+    re.IGNORECASE,
+)
+DEAD_END_LOOP_THRESHOLD = 3
+
+
+def _detect_dead_end_loop(chat_history: list[dict]) -> bool:
+    """Return True when the bot has redirected to customer service 3 or more times."""
+    count = sum(
+        1
+        for turn in chat_history
+        if turn.get("role") == "assistant"
+        and _DEAD_END_PATTERN.search(turn.get("content", ""))
+    )
+    return count >= DEAD_END_LOOP_THRESHOLD
 
 
 def get_session_state(session_id: str) -> dict[str, Any]:
@@ -1065,6 +1120,43 @@ def _handle_chat(request_id: str) -> Response:
             )
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
+
+    # FRUSTRATION GATE: auto-escalate on detected distress or dead-end loop
+    user_turns_so_far = sum(1 for t in chat_history if t.get("role") == "user")
+
+    if current_state not in ('awaiting_name', 'awaiting_email') and user_turns_so_far >= 1:
+        frustration_hit = FRUSTRATION_RE.search(user_message)
+        prior_contact_hit = PRIOR_CONTACT_FAILED_RE.search(user_message)
+        loop_hit = _detect_dead_end_loop(chat_history)
+
+        if frustration_hit or prior_contact_hit or loop_hit:
+            detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+            state_data['state'] = 'awaiting_name'
+            state_data['question'] = user_message
+            state_data['language'] = detected_lang
+            state_data['escalation_reason'] = (
+                'frustration' if (frustration_hit or prior_contact_hit) else 'loop'
+            )
+            save_session_state(session_id, state_data)
+
+            if detected_lang == 'nl':
+                response_text = (
+                    "Dat klinkt echt frustrerend, en dat begrijp ik goed. "
+                    "Dit verdient persoonlijke aandacht van een collega. "
+                    "Mag ik je naam, zodat ik je direct kan doorverbinden?"
+                )
+            else:
+                response_text = (
+                    "I can hear that this has been really frustrating, and I'm sorry. "
+                    "This deserves personal attention from one of our colleagues. "
+                    "May I have your name so I can connect you right away?"
+                )
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            logger.info(
+                "[%s] Frustration escalation triggered (frustration=%s, prior_contact=%s, loop=%s)",
+                request_id, bool(frustration_hit), bool(prior_contact_hit), loop_hit,
+            )
+            return jsonify({"response": response_text, "request_id": request_id})
 
     # Closing/farewell detection — skip RAG, reply with short canned response
     if CLOSING_RE.match(user_message.strip()):
