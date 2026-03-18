@@ -90,6 +90,25 @@ class TestTrackingIntentRE:
             "without any delivery/tracking keywords."
         )
 
+    # Regression: plural/formal "our/your" order pronouns
+    def test_matches_onze_bestelling(self):
+        assert TRACKING_INTENT_RE.search("Wanneer kunnen wij onze bestelling verwachten vandaag?")
+
+    def test_matches_onze_zending(self):
+        assert TRACKING_INTENT_RE.search("Waar is onze zending?")
+
+    def test_matches_uw_bestelling(self):
+        assert TRACKING_INTENT_RE.search("Wanneer wordt uw bestelling geleverd?")
+
+    def test_matches_jullie_order(self):
+        assert TRACKING_INTENT_RE.search("Hebben jullie order al verzonden?")
+
+    def test_matches_wanneer_kunnen(self):
+        assert TRACKING_INTENT_RE.search("Wanneer kunnen wij iets verwachten?")
+
+    def test_matches_binnen_krijgen(self):
+        assert TRACKING_INTENT_RE.search("Wij zouden deze order vandaag binnen krijgen via een transporteur.")
+
 
 class TestNoOrderYetRE:
     """NO_ORDER_YET_RE should detect 'I haven't ordered yet' statements."""

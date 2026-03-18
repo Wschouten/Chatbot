@@ -255,6 +255,11 @@ TRACKING_INTENT_RE = re.compile(
     r'|hoe laat.*lever|hoe laat.*bezorg'
     r'|mijn (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
     r'|mij (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|onze (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|uw (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|jullie (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
+    r'|wanneer kunnen'
+    r'|binnenkrijgen|binnen\s+krijgen'
     r'|bezorgd worden|wanneer bezorgd|wordt bezorgd'
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
     re.IGNORECASE
