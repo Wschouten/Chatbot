@@ -147,7 +147,7 @@ Remove:
 # =============================================================================
 
 # Zapier webhook URL to verify a Shopify order number + email combination
-ZAPIER_WEBHOOK_URL_WISMO=https://hooks.zapier.com/hooks/catch/23007688/u0qy8uk/
+ZAPIER_WEBHOOK_URL_WISMO=https://hooks.zapier.com/hooks/catch/XXXXXXXX/XXXXXXX/
 ```
 
 Replace with:
