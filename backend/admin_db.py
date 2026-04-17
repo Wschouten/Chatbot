@@ -9,12 +9,40 @@ Feature 30a: Admin DB Schema & Core Module
 import logging
 import os
 import sqlite3
+import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 from flask import g
 
 logger = logging.getLogger(__name__)
+
+# Serializes all write transactions so `check_same_thread=False` (required
+# because Flask may dispatch one request per thread but reuse the connection
+# within a request) cannot lead to interleaved writes corrupting SQLite state.
+_db_write_lock = threading.Lock()
+
+
+@contextmanager
+def _transaction():
+    """Serialized write transaction on the per-request DB connection.
+
+    Acquires the module-level write lock, yields the connection, and commits
+    on clean exit. Any exception rolls the transaction back before re-raising,
+    so a partial batch of writes never lands on disk.
+    """
+    db = get_db()
+    with _db_write_lock:
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                logger.exception("rollback failed after transaction error")
+            raise
 
 # Default DB path (configurable via PORTAL_DB_PATH env var)
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "portal.db")
@@ -311,9 +339,6 @@ def upsert_metadata(session_id: str, *, status=_UNSET,
     Uses a sentinel default so that passing ``rating=None`` explicitly
     clears the value, while omitting it leaves it unchanged.
     """
-    db = get_db()
-    _ensure_metadata(db, session_id)
-
     updates = []
     params: list = []
     if status is not _UNSET:
@@ -326,15 +351,16 @@ def upsert_metadata(session_id: str, *, status=_UNSET,
         updates.append("language = ?")
         params.append(language)
 
-    if updates:
-        updates.append("updated_at = ?")
-        params.append(_now())
-        params.append(session_id)
-        db.execute(
-            f"UPDATE conversation_metadata SET {', '.join(updates)} WHERE session_id = ?",
-            params,
-        )
-        db.commit()
+    with _transaction() as db:
+        _ensure_metadata(db, session_id)
+        if updates:
+            updates.append("updated_at = ?")
+            params.append(_now())
+            params.append(session_id)
+            db.execute(
+                f"UPDATE conversation_metadata SET {', '.join(updates)} WHERE session_id = ?",
+                params,
+            )
 
     return get_metadata(session_id)
 
@@ -345,18 +371,17 @@ def upsert_metadata(session_id: str, *, status=_UNSET,
 
 def add_conversation_label(session_id: str, label_name: str) -> bool:
     """Add a label to a conversation. Returns True on success, False if duplicate."""
-    db = get_db()
-    _ensure_metadata(db, session_id)
     try:
-        db.execute(
-            "INSERT INTO conversation_labels (session_id, label_name, created_at) VALUES (?, ?, ?)",
-            (session_id, label_name, _now()),
-        )
-        db.execute(
-            "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
-            (_now(), session_id),
-        )
-        db.commit()
+        with _transaction() as db:
+            _ensure_metadata(db, session_id)
+            db.execute(
+                "INSERT INTO conversation_labels (session_id, label_name, created_at) VALUES (?, ?, ?)",
+                (session_id, label_name, _now()),
+            )
+            db.execute(
+                "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
+                (_now(), session_id),
+            )
         return True
     except sqlite3.IntegrityError:
         return False
@@ -364,18 +389,17 @@ def add_conversation_label(session_id: str, label_name: str) -> bool:
 
 def remove_conversation_label(session_id: str, label_name: str) -> bool:
     """Remove a label from a conversation. Returns True if a row was deleted."""
-    db = get_db()
-    cur = db.execute(
-        "DELETE FROM conversation_labels WHERE session_id = ? AND label_name = ?",
-        (session_id, label_name),
-    )
-    if cur.rowcount:
-        db.execute(
-            "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
-            (_now(), session_id),
+    with _transaction() as db:
+        cur = db.execute(
+            "DELETE FROM conversation_labels WHERE session_id = ? AND label_name = ?",
+            (session_id, label_name),
         )
-    db.commit()
-    return cur.rowcount > 0
+        if cur.rowcount:
+            db.execute(
+                "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
+                (_now(), session_id),
+            )
+        return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -384,28 +408,26 @@ def remove_conversation_label(session_id: str, label_name: str) -> bool:
 
 def add_note(session_id: str, text: str, author: str = "admin") -> str:
     """Add a note to a conversation. Returns the new note ID."""
-    db = get_db()
-    _ensure_metadata(db, session_id)
     note_id = str(uuid.uuid4())
-    db.execute(
-        "INSERT INTO conversation_notes (id, session_id, text, author, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (note_id, session_id, text, author, _now()),
-    )
-    db.execute(
-        "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
-        (_now(), session_id),
-    )
-    db.commit()
+    with _transaction() as db:
+        _ensure_metadata(db, session_id)
+        db.execute(
+            "INSERT INTO conversation_notes (id, session_id, text, author, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (note_id, session_id, text, author, _now()),
+        )
+        db.execute(
+            "UPDATE conversation_metadata SET updated_at = ? WHERE session_id = ?",
+            (_now(), session_id),
+        )
     return note_id
 
 
 def delete_note(note_id: str) -> bool:
     """Delete a note by ID. Returns True if a row was deleted."""
-    db = get_db()
-    cur = db.execute("DELETE FROM conversation_notes WHERE id = ?", (note_id,))
-    db.commit()
-    return cur.rowcount > 0
+    with _transaction() as db:
+        cur = db.execute("DELETE FROM conversation_notes WHERE id = ?", (note_id,))
+        return cur.rowcount > 0
 
 
 # ---------------------------------------------------------------------------
@@ -414,53 +436,49 @@ def delete_note(note_id: str) -> bool:
 
 def add_message_label(session_id: str, message_id: str, label_name: str) -> int:
     """Label a specific message. Returns the new row ID."""
-    db = get_db()
-    _ensure_metadata(db, session_id)
-    cur = db.execute(
-        "INSERT INTO message_metadata (session_id, message_id, label_name, created_at) "
-        "VALUES (?, ?, ?, ?)",
-        (session_id, message_id, label_name, _now()),
-    )
-    db.commit()
-    return cur.lastrowid
+    with _transaction() as db:
+        _ensure_metadata(db, session_id)
+        cur = db.execute(
+            "INSERT INTO message_metadata (session_id, message_id, label_name, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (session_id, message_id, label_name, _now()),
+        )
+        return cur.lastrowid
 
 
 def remove_message_label(session_id: str, message_id: str, label_name: str) -> bool:
     """Remove a label from a message. Returns True if a row was deleted."""
-    db = get_db()
-    cur = db.execute(
-        "DELETE FROM message_metadata "
-        "WHERE session_id = ? AND message_id = ? AND label_name = ?",
-        (session_id, message_id, label_name),
-    )
-    db.commit()
-    return cur.rowcount > 0
+    with _transaction() as db:
+        cur = db.execute(
+            "DELETE FROM message_metadata "
+            "WHERE session_id = ? AND message_id = ? AND label_name = ?",
+            (session_id, message_id, label_name),
+        )
+        return cur.rowcount > 0
 
 
 def set_message_rating(session_id: str, message_id: str, rating: int | None) -> bool:
     """Set or clear a rating on a message. Upserts the row."""
-    db = get_db()
-    _ensure_metadata(db, session_id)
-    # Check if a rating row already exists for this message
-    existing = db.execute(
-        "SELECT id FROM message_metadata "
-        "WHERE session_id = ? AND message_id = ? AND label_name IS NULL",
-        (session_id, message_id),
-    ).fetchone()
+    with _transaction() as db:
+        _ensure_metadata(db, session_id)
+        existing = db.execute(
+            "SELECT id FROM message_metadata "
+            "WHERE session_id = ? AND message_id = ? AND label_name IS NULL",
+            (session_id, message_id),
+        ).fetchone()
 
-    if existing:
-        db.execute(
-            "UPDATE message_metadata SET rating = ? WHERE id = ?",
-            (rating, existing["id"]),
-        )
-    else:
-        db.execute(
-            "INSERT INTO message_metadata (session_id, message_id, rating, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (session_id, message_id, rating, _now()),
-        )
-    db.commit()
-    return True
+        if existing:
+            db.execute(
+                "UPDATE message_metadata SET rating = ? WHERE id = ?",
+                (rating, existing["id"]),
+            )
+        else:
+            db.execute(
+                "INSERT INTO message_metadata (session_id, message_id, rating, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (session_id, message_id, rating, _now()),
+            )
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -478,14 +496,13 @@ def get_label_definitions() -> list[dict]:
 
 def add_label_definition(name: str, color: str = "#94A3B8", description: str = "") -> bool:
     """Create a new label definition. Returns True on success, False if duplicate."""
-    db = get_db()
     try:
-        db.execute(
-            "INSERT INTO label_definitions (name, color, description, created_at) "
-            "VALUES (?, ?, ?, ?)",
-            (name, color, description, _now()),
-        )
-        db.commit()
+        with _transaction() as db:
+            db.execute(
+                "INSERT INTO label_definitions (name, color, description, created_at) "
+                "VALUES (?, ?, ?, ?)",
+                (name, color, description, _now()),
+            )
         return True
     except sqlite3.IntegrityError:
         return False
@@ -493,7 +510,6 @@ def add_label_definition(name: str, color: str = "#94A3B8", description: str = "
 
 def delete_label_definition(name: str) -> bool:
     """Delete a label definition. Returns True if a row was deleted."""
-    db = get_db()
-    cur = db.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
-    db.commit()
-    return cur.rowcount > 0
+    with _transaction() as db:
+        cur = db.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
+        return cur.rowcount > 0
