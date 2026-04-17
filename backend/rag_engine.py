@@ -6,6 +6,7 @@ import glob
 import logging
 import os
 import time
+import tiktoken
 from typing import Any, Optional
 
 from brand_config import get_brand_config
@@ -67,9 +68,6 @@ def get_openai_health() -> dict:
 
 
 
-# Configure logging
-logger = logging.getLogger(__name__)
-
 # Try imports for RAG specific libraries (incompatible with Py 3.14)
 try:
     import chromadb
@@ -80,6 +78,14 @@ except Exception as e:
     RAG_DEPENDENCIES_LOADED = False
     chromadb = None  # type: ignore
     PdfReader = None  # type: ignore
+
+
+def _count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
+    try:
+        enc = tiktoken.encoding_for_model(model)
+    except KeyError:
+        enc = tiktoken.get_encoding("cl100k_base")
+    return len(enc.encode(text))
 
 
 class RagEngine:
@@ -138,6 +144,11 @@ class RagEngine:
         """Get embedding for text using OpenAI."""
         if not self.openai_client:
             raise RuntimeError("OpenAI client not initialized")
+        MAX_EMBEDDING_TOKENS = 8000  # text-embedding-3-small limit is 8191
+        token_count = _count_tokens(text)
+        if token_count > MAX_EMBEDDING_TOKENS:
+            text = text[: MAX_EMBEDDING_TOKENS * 4]
+            logger.warning("Embedding input truncated from %d tokens", token_count)
         response = self.openai_client.embeddings.create(
             input=text,
             model=self.embedding_model
@@ -203,8 +214,6 @@ class RagEngine:
 
     def _get_cached_context(self, query: str) -> Optional[str]:
         """Get cached RAG context if available and not stale."""
-        import time
-
         if query in self.session_cache:
             context, timestamp = self.session_cache[query]
             if time.time() - timestamp < self.cache_ttl:
@@ -217,7 +226,6 @@ class RagEngine:
 
     def _cache_context(self, query: str, context: str) -> None:
         """Cache RAG context for this query."""
-        import time
         self.session_cache[query] = (context, time.time())
 
         # Clean up old entries (keep max 50)
@@ -350,6 +358,7 @@ class RagEngine:
                     chunk_metadata = {"source": source_id, "chunk": chunk_index}
                     if file_metadata:
                         chunk_metadata.update(file_metadata)
+                    chunk_metadata = {k: str(v) for k, v in chunk_metadata.items() if v is not None}
 
                     self.collection.add(
                         documents=[chunk],
@@ -440,7 +449,7 @@ class RagEngine:
                     self.collection.get(limit=total, include=[])['ids']
                 )
         except Exception:
-            pass
+            logger.debug("Unexpected error in cache lookup", exc_info=True)
 
         count = 0
         skipped = 0
@@ -640,7 +649,8 @@ class RagEngine:
 
                             for doc, doc_id in zip(filtered_docs, filtered_ids):
                                 # Extract source from document ID (format: "source_chunk_X")
-                                source = "_".join(doc_id.split("_")[:-2]) if "_chunk_" in doc_id else doc_id
+                                parts = doc_id.split("_")
+                                source = "_".join(parts[:-2]) if len(parts) > 2 else doc_id
 
                                 if source_count.get(source, 0) < 2:
                                     diversified_docs.append(doc)
@@ -961,11 +971,22 @@ class RagEngine:
                 {"role": "system", "content": system_prompt}
             ]
 
-            # Add conversation history (last 5 exchanges max to avoid token limits)
+            # Add conversation history, capped by token budget
             if chat_history:
-                # Limit to last 10 messages (5 user + 5 assistant)
-                recent_history = chat_history[-10:]
-                messages.extend(recent_history)
+                MAX_HISTORY_TOKENS = 3000
+                try:
+                    enc = tiktoken.encoding_for_model(self.chat_model)
+                except KeyError:
+                    enc = tiktoken.get_encoding("cl100k_base")
+                trimmed: list[dict] = []
+                total = 0
+                for msg in reversed(chat_history):
+                    tokens = len(enc.encode(msg.get("content", "")))
+                    if total + tokens > MAX_HISTORY_TOKENS:
+                        break
+                    trimmed.insert(0, msg)
+                    total += tokens
+                messages.extend(trimmed)
 
             # Add current query with context
             messages.append({"role": "user", "content": user_content})

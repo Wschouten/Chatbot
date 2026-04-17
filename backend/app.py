@@ -16,7 +16,7 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from rag_engine import RagEngine, get_openai_health, RAG_DEPENDENCIES_LOADED
+from rag_engine import RagEngine, get_openai_health
 from shipping_api import get_shipment_status, get_shipping_client
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
@@ -38,7 +38,7 @@ PLACEHOLDER_VALUES = ['', 'CHANGE_ME_generate_a_secure_key_here']
 
 if not ADMIN_API_KEY or ADMIN_API_KEY in PLACEHOLDER_VALUES:
     # Check if we're in debug/development mode
-    is_debug = os.getenv('FLASK_DEBUG', '').lower() == 'true' or os.getenv('FLASK_ENV', '') == 'development'
+    is_debug = os.getenv('FLASK_DEBUG', '').lower() in ('1', 'true', 'yes') or os.getenv('FLASK_ENV', '') == 'development'
 
     if is_debug:
         # Debug mode: log warning but allow startup
@@ -204,27 +204,73 @@ def handle_generic_error(e):
 
 
 # =============================================================================
+# SECURITY: Admin Session Cookie (HttpOnly)
+# =============================================================================
+# Session tokens are signed with itsdangerous (bundled with Flask). The session
+# secret is derived from ADMIN_API_KEY so no extra env var is required, but can
+# be overridden via SESSION_SECRET for key-rotation scenarios.
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+
+ADMIN_SESSION_COOKIE = "admin_session"
+ADMIN_SESSION_MAX_AGE = 4 * 60 * 60  # 4 hours
+
+_session_secret = os.environ.get("SESSION_SECRET") or f"admin-session::{ADMIN_API_KEY or ''}"
+_session_serializer = URLSafeTimedSerializer(_session_secret, salt="admin-session-v1")
+
+
+def _issue_admin_session_token(user: str) -> str:
+    """Sign an admin session token tied to a user identifier."""
+    return _session_serializer.dumps({"u": user})
+
+
+def _verify_admin_session_cookie() -> bool:
+    """Return True if a valid, non-expired admin_session cookie is present."""
+    token = request.cookies.get(ADMIN_SESSION_COOKIE)
+    if not token:
+        return False
+    try:
+        _session_serializer.loads(token, max_age=ADMIN_SESSION_MAX_AGE)
+        return True
+    except (BadSignature, SignatureExpired):
+        return False
+
+
+def _is_secure_request() -> bool:
+    """Detect HTTPS (respects X-Forwarded-Proto for Railway/reverse proxies)."""
+    if request.is_secure:
+        return True
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").lower()
+    return forwarded_proto == "https"
+
+
+# =============================================================================
 # SECURITY: Reusable Admin Auth Decorator (Feature 30b)
 # =============================================================================
 def require_admin_key(f):
-    """Decorator to require X-Admin-Key header for admin routes."""
+    """Decorator that accepts either an X-Admin-Key header (programmatic use)
+    or a valid admin_session HttpOnly cookie (browser portal).
+    """
     @wraps(f)
     def decorated_function(*args, **kwargs):
         admin_key = os.environ.get("ADMIN_API_KEY")
-        provided_key = request.headers.get("X-Admin-Key")
-
         if not admin_key:
             logger.warning("ADMIN_API_KEY not configured - admin API is disabled")
             return jsonify({"error": "Admin API not configured"}), 500
 
-        if not provided_key or not secrets.compare_digest(provided_key, admin_key):
-            logger.warning(
-                "Unauthorized admin access attempt from %s on %s",
-                request.remote_addr, request.path,
-            )
-            return jsonify({"error": "Unauthorized"}), 401
+        # Path 1: signed HttpOnly session cookie (browser)
+        if _verify_admin_session_cookie():
+            return f(*args, **kwargs)
 
-        return f(*args, **kwargs)
+        # Path 2: raw X-Admin-Key header (scripts / CI)
+        provided_key = request.headers.get("X-Admin-Key")
+        if provided_key and secrets.compare_digest(provided_key, admin_key):
+            return f(*args, **kwargs)
+
+        logger.warning(
+            "Unauthorized admin access attempt from %s on %s",
+            request.remote_addr, request.path,
+        )
+        return jsonify({"error": "Unauthorized"}), 401
     return decorated_function
 
 
@@ -339,6 +385,30 @@ PRIOR_CONTACT_FAILED_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Stock / product availability intent patterns
+STOCK_INTENT_RE = re.compile(
+    # Dutch
+    r'\b(hebben\s+jullie|is\s+er\s+nog|zijn\s+er\s+nog|nog\s+op\s+voorraad'
+    r'|op\s+voorraad|in\s+voorraad|beschikbaar|leverbaar|uitverkocht'
+    r'|kan\s+ik\s+.*\s+bestellen|is\s+.*\s+nog\s+te\s+koop'
+    r'|verkopen\s+jullie'
+    # English
+    r'|in\s+stock|out\s+of\s+stock|available|availability'
+    r'|do\s+you\s+(have|carry|sell|stock)|is\s+.*\s+available'
+    r'|is\s+.*\s+in\s+stock|still\s+(available|in\s+stock)'
+    r'|how\s+many\s+.*\s+left)\b',
+    re.IGNORECASE,
+)
+
+PRODUCT_NAME_EXTRACT_RE = re.compile(
+    r'(?:hebben\s+jullie|is\s+er\s+nog|zijn\s+er\s+nog|do\s+you\s+have'
+    r'|do\s+you\s+carry|do\s+you\s+sell|is)\s+(?:een\s+|de\s+|het\s+|a\s+|an\s+|the\s+)?'
+    r'(.{3,80}?)'
+    r'(?:\s+(?:nog|beschikbaar|in\s+voorraad|op\s+voorraad|leverbaar'
+    r'|available|in\s+stock|out\s+of\s+stock|te\s+koop))?$',
+    re.IGNORECASE,
+)
+
 
 # Initialize RAG Engine
 rag_engine = RagEngine()
@@ -410,9 +480,7 @@ def health():
         "status": "ok",
         "dependencies": {}
     }
-    health_status["rag_available"] = bool(
-        RAG_DEPENDENCIES_LOADED and rag_engine.collection
-    )
+    health_status["rag_available"] = bool(rag_engine.collection)
     health_status["python_version"] = sys.version.split()[0]
     health_status["environment"] = "docker" if os.path.exists("/.dockerenv") else "local"
     status_code = 200
@@ -583,17 +651,23 @@ def get_session_state(session_id: str) -> dict[str, Any]:
 
 
 def save_session_state(session_id: str, state: dict[str, Any]) -> None:
-    """Save session state to disk."""
+    """Save session state to disk.
+
+    Writes to a temp file and atomically renames, so a concurrent reader or a
+    crashed writer cannot leave a truncated/empty session file on disk.
+    """
     safe_id = sanitize_session_id(session_id)
     path = os.path.join(SESSION_DIR, f"{safe_id}.json")
-    with open(path, 'w', encoding='utf-8') as f:
+    tmp_path = f"{path}.tmp.{os.getpid()}"
+    with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(state, f)
+    os.replace(tmp_path, path)
 
 
 def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
     """Format shipping API result into user-friendly Dutch message."""
-    status = result["status"]
-    details = result.get("details", {})
+    status = result.get("status", "unknown")
+    details = result.get("details", {}) or {}
     desc = details.get("status_description", "")
 
     # Build the main status message
@@ -641,6 +715,100 @@ def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
         msg += f"\n\n💬 Opmerking: {note}"
 
     return msg
+
+
+def format_stock_response(result: dict, lang: str, query: str = "") -> str:
+    """Format a Shopify product availability result into a user-friendly message."""
+    use_emojis = os.getenv("BRAND_USE_EMOJIS", "true").lower() == "true"
+
+    if result["outcome"] == "found":
+        p = result["products"][0]
+        name = p["title"]
+        url = p.get("url", "")
+        inv = p.get("inventory") or 0
+        if p["available"]:
+            if lang == "nl":
+                if inv and inv < 10:
+                    stock_note = "beperkte voorraad"
+                elif inv and inv >= 50:
+                    stock_note = "ruim op voorraad"
+                elif inv:
+                    stock_note = f"{inv} op voorraad"
+                else:
+                    stock_note = ""
+                msg = f"{'✅ ' if use_emojis else ''}Ja, **{name}** is beschikbaar!"
+                if stock_note:
+                    msg += f" ({stock_note})"
+                if url:
+                    msg += f"\nBekijk het product: {url}"
+            else:
+                if inv and inv < 10:
+                    stock_note = "limited stock"
+                elif inv and inv >= 50:
+                    stock_note = "plenty in stock"
+                elif inv:
+                    stock_note = f"{inv} in stock"
+                else:
+                    stock_note = ""
+                msg = f"{'✅ ' if use_emojis else ''}Yes, **{name}** is available!"
+                if stock_note:
+                    msg += f" ({stock_note})"
+                if url:
+                    msg += f"\nView the product: {url}"
+        else:
+            if lang == "nl":
+                msg = (
+                    f"{'😔 ' if use_emojis else ''}Helaas is **{name}** momenteel niet op voorraad.\n"
+                    "Neem contact op via klantenservice@groundcovergroup.nl voor meer informatie."
+                )
+            else:
+                msg = (
+                    f"{'😔 ' if use_emojis else ''}Unfortunately **{name}** is currently out of stock.\n"
+                    "Please contact us at klantenservice@groundcovergroup.nl for more information."
+                )
+        return msg
+
+    elif result["outcome"] == "multiple":
+        products = result["products"]
+        if lang == "nl":
+            lines = ["Ik vond meerdere producten die overeenkomen. Bedoel je een van deze?\n"]
+            for i, p in enumerate(products, 1):
+                avail = "✅ beschikbaar" if p["available"] else "❌ niet op voorraad"
+                lines.append(f"{i}. **{p['title']}** — {avail}")
+            lines.append("\nTyp het nummer of de naam van het product dat je bedoelt.")
+        else:
+            lines = ["I found a few matching products. Did you mean one of these?\n"]
+            for i, p in enumerate(products, 1):
+                avail = "✅ available" if p["available"] else "❌ out of stock"
+                lines.append(f"{i}. **{p['title']}** — {avail}")
+            lines.append("\nType the number or name of the product you're looking for.")
+        return "\n".join(lines)
+
+    elif result["outcome"] == "not_found":
+        store_url = f"https://{os.getenv('SHOPIFY_STORE_DOMAIN', '')}".rstrip('/')
+        if lang == "nl":
+            return (
+                f"{'🤔 ' if use_emojis else ''}Ik kan geen product vinden met de naam **{query}**.\n"
+                f"Kijk in onze webshop: {store_url}\n"
+                "Of neem contact op via klantenservice@groundcovergroup.nl."
+            )
+        else:
+            return (
+                f"{'🤔 ' if use_emojis else ''}I couldn't find a product called **{query}**.\n"
+                f"Browse our webshop: {store_url}\n"
+                "Or contact us at klantenservice@groundcovergroup.nl."
+            )
+    else:  # error
+        if lang == "nl":
+            return (
+                f"{'😕 ' if use_emojis else ''}Het is momenteel niet mogelijk om de voorraad op te vragen.\n"
+                "Probeer het later opnieuw of neem contact op via klantenservice@groundcovergroup.nl."
+            )
+        else:
+            return (
+                f"{'😕 ' if use_emojis else ''}I'm unable to check stock availability right now.\n"
+                "Please try again later or contact us at klantenservice@groundcovergroup.nl."
+            )
 
 
 def _log_chat_message(session_id: str, request_id: str, user_message: str, response_text: str) -> None:
@@ -874,6 +1042,100 @@ def _handle_chat(request_id: str) -> Response:
             state_data.pop(key, None)
         save_session_state(session_id, state_data)
 
+    def _stock_timeout(ts_str: str) -> bool:
+        """Return True if the stock lookup state has been waiting more than 5 minutes."""
+        try:
+            ts = datetime.datetime.fromisoformat(ts_str)
+            return (datetime.datetime.now() - ts) > datetime.timedelta(minutes=5)
+        except Exception:
+            return True
+
+    def _clear_stock_state() -> None:
+        for key in ('awaiting_product_name', 'product_name_timestamp',
+                    'pending_product_query', 'stock_candidates'):
+            state_data.pop(key, None)
+        save_session_state(session_id, state_data)
+
+    def _call_shopify_storefront(product_query: str) -> dict:
+        """Query the Shopify Storefront API for product availability by name or SKU."""
+        store = os.getenv("SHOPIFY_STORE_DOMAIN", "").strip()
+        token = os.getenv("SHOPIFY_STOREFRONT_TOKEN", "").strip()
+        version = os.getenv("SHOPIFY_API_VERSION", "2024-01").strip()
+        max_results = int(os.getenv("SHOPIFY_MAX_RESULTS", "3"))
+
+        if not token:
+            logger.warning("SHOPIFY_STOREFRONT_TOKEN not set — returning mock stock response")
+            return {"outcome": "found", "products": [
+                {"title": "Mock Product", "available": True, "inventory": 5, "url": "#"}
+            ]}
+
+        # Sanitize query: strip any non-alphanumeric/space/hyphen chars, then cap length.
+        # This prevents GraphQL/Shopify-query injection via quotes, backslashes, parens,
+        # newlines, colons, or asterisks before embedding into the search string.
+        raw = product_query.strip()[:100]
+        safe_query = re.sub(r'[^A-Za-z0-9\s\-]', ' ', raw).strip()
+        if not safe_query:
+            return {"outcome": "not_found", "products": []}
+        graphql_query = (
+            "query ProductSearch($search: String!, $first: Int!) {"
+            "  products(first: $first, query: $search) {"
+            "    edges {"
+            "      node {"
+            "        title"
+            "        availableForSale"
+            "        totalInventory"
+            "        onlineStoreUrl"
+            "      }"
+            "    }"
+            "  }"
+            "}"
+        )
+        search_term = f"title:*{safe_query}* OR sku:{safe_query}"
+        variables = {"search": search_term, "first": max_results + 2}
+
+        url = f"https://{store}/api/{version}/graphql.json"
+        headers = {
+            "Content-Type": "application/json",
+            "X-Shopify-Storefront-Access-Token": token,
+        }
+
+        try:
+            resp = requests.post(
+                url,
+                json={"query": graphql_query, "variables": variables},
+                headers=headers,
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            edges = data["data"]["products"]["edges"]
+        except requests.exceptions.Timeout:
+            logger.error("Shopify Storefront API timeout for query: %s", product_query)
+            return {"outcome": "error"}
+        except requests.exceptions.RequestException as exc:
+            logger.error("Shopify Storefront API request failed: %s", exc)
+            return {"outcome": "error"}
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.error("Shopify Storefront API unexpected response shape: %s", exc)
+            return {"outcome": "error"}
+
+        if not edges:
+            return {"outcome": "not_found"}
+
+        products = [
+            {
+                "title": e["node"]["title"],
+                "available": e["node"]["availableForSale"],
+                "inventory": e["node"].get("totalInventory") or 0,
+                "url": e["node"].get("onlineStoreUrl") or "",
+            }
+            for e in edges[:max_results]
+        ]
+
+        if len(products) == 1:
+            return {"outcome": "found", "products": products}
+        return {"outcome": "multiple", "products": products}
+
 
     # WISMO step 1 of 2: waiting for Shopify order number
     if state_data.get('awaiting_shopify_order_number'):
@@ -1105,6 +1367,80 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
+    # STOCK LOOKUP step 2: user is providing the product name/SKU they were asked for
+    if state_data.get('awaiting_product_name'):
+        if _stock_timeout(state_data.get('product_name_timestamp', '')):
+            _clear_stock_state()
+            # Fall through to normal processing
+        else:
+            user_lang = state_data.get('language', 'nl')
+            candidates = state_data.get('stock_candidates')
+            user_input = user_message.strip()
+
+            # Try to resolve from candidate list (user typed "1", "2", or partial name)
+            product_query = user_input
+            if candidates:
+                resolved = None
+                if user_input.isdigit():
+                    idx = int(user_input) - 1
+                    if 0 <= idx < len(candidates):
+                        resolved = candidates[idx]["title"]
+                else:
+                    for c in candidates:
+                        if user_input.lower() in c["title"].lower():
+                            resolved = c["title"]
+                            break
+                if resolved:
+                    product_query = resolved
+
+            result = _call_shopify_storefront(product_query)
+            _clear_stock_state()
+
+            if result["outcome"] == "multiple":
+                # Still ambiguous — re-enter state with new candidate list
+                state_data['awaiting_product_name'] = True
+                state_data['product_name_timestamp'] = datetime.datetime.now().isoformat()
+                state_data['stock_candidates'] = result["products"]
+                save_session_state(session_id, state_data)
+
+            response_text = format_stock_response(result, user_lang, product_query)
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            return jsonify({"response": response_text, "request_id": request_id})
+
+    # STOCK LOOKUP step 1: detect product availability intent inline
+    if not PRE_PURCHASE_RE.search(user_message) and STOCK_INTENT_RE.search(user_message):
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        state_data['language'] = detected_lang
+
+        # Try to extract the product name/SKU directly from the message
+        product_query = None
+        m = PRODUCT_NAME_EXTRACT_RE.search(user_message)
+        if m:
+            candidate = m.group(1).strip()
+            stop_words = {"het", "it", "dat", "dit", "een", "de", "er"}
+            if len(candidate) >= 3 and candidate.lower() not in stop_words:
+                product_query = candidate
+
+        if product_query:
+            result = _call_shopify_storefront(product_query)
+            if result["outcome"] == "multiple":
+                state_data['awaiting_product_name'] = True
+                state_data['product_name_timestamp'] = datetime.datetime.now().isoformat()
+                state_data['stock_candidates'] = result["products"]
+            response_text = format_stock_response(result, detected_lang, product_query)
+        else:
+            # Product name not clear — ask the user
+            state_data['awaiting_product_name'] = True
+            state_data['product_name_timestamp'] = datetime.datetime.now().isoformat()
+            if detected_lang == 'nl':
+                response_text = "Welk product wil je checken? Geef de naam of het artikelnummer."
+            else:
+                response_text = "Which product would you like to check? Please provide the name or SKU."
+
+        save_session_state(session_id, state_data)
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        return jsonify({"response": response_text, "request_id": request_id})
+
     # Detect explicit human escalation request (pre-RAG, deterministic)
     if HUMAN_ESCALATION_RE.search(user_message):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
@@ -1260,6 +1596,67 @@ def serve_portal_static(filename):
         os.path.join(os.path.dirname(__file__), '..', 'portal'),
         filename
     )
+
+
+# -----------------------------------------------------------------------------
+# Admin session auth endpoints
+# -----------------------------------------------------------------------------
+@app.route('/admin/api/login', methods=['POST'])
+@limiter.limit("10 per minute")
+def admin_login():
+    """Validate ADMIN_API_KEY and set a signed HttpOnly session cookie.
+
+    Request JSON: {"username": "...", "password": "<ADMIN_API_KEY>"}
+    The username is stored inside the signed token for audit logging only;
+    authorization is still driven exclusively by matching the admin key.
+    """
+    admin_key = os.environ.get("ADMIN_API_KEY")
+    if not admin_key:
+        return jsonify({"error": "Admin API not configured"}), 500
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()[:64]
+    password = data.get("password") or ""
+
+    if not username or not password:
+        return jsonify({"error": "Missing credentials"}), 400
+
+    if not secrets.compare_digest(password, admin_key):
+        logger.warning(
+            "Failed admin login attempt for user=%r from %s",
+            username, request.remote_addr,
+        )
+        return jsonify({"error": "Unauthorized"}), 401
+
+    token = _issue_admin_session_token(username)
+    resp = jsonify({"ok": True, "user": {"username": username, "role": "admin"}})
+    resp.set_cookie(
+        ADMIN_SESSION_COOKIE,
+        token,
+        max_age=ADMIN_SESSION_MAX_AGE,
+        httponly=True,
+        secure=_is_secure_request(),
+        samesite="Strict",
+        path="/",
+    )
+    logger.info("Admin login success for user=%r from %s", username, request.remote_addr)
+    return resp
+
+
+@app.route('/admin/api/logout', methods=['POST'])
+def admin_logout():
+    """Clear the admin session cookie."""
+    resp = jsonify({"ok": True})
+    resp.delete_cookie(ADMIN_SESSION_COOKIE, path="/")
+    return resp
+
+
+@app.route('/admin/api/session', methods=['GET'])
+def admin_session_check():
+    """Return whether the caller currently holds a valid session cookie."""
+    if _verify_admin_session_cookie():
+        return jsonify({"authenticated": True})
+    return jsonify({"authenticated": False}), 401
 
 
 @app.route('/admin/api/conversations', methods=['GET'])
@@ -1776,5 +2173,5 @@ def delete_label_definition_route(label_name):
 
 
 if __name__ == '__main__':
-    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    debug_mode = os.getenv("FLASK_DEBUG", "").lower() in ("1", "true", "yes")
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)

@@ -66,7 +66,7 @@ class EmailClient:
         brand = get_brand_config()
         welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
 
-        body = "Beste GroundCoverGroup,\n\n"
+        body = f"Beste {brand.name},\n\n"
         body += f"Stuur een email naar het volgende mailadres: {requester_email}\n\n"
         body += "=" * 50 + "\n"
         body += "COMPLETE CONVERSATION HISTORY\n"
@@ -124,12 +124,15 @@ class EmailClient:
 
         Returns immediately with a success result. The actual MailerSend API call
         happens in a daemon thread so it doesn't block the HTTP response.
+        Any unexpected errors in the thread are logged instead of dying silently.
         """
-        thread = threading.Thread(
-            target=self.send_email,
-            args=(name, requester_email, question, session_history),
-            daemon=True,
-        )
+        def _send_with_logging() -> None:
+            try:
+                self.send_email(name, requester_email, question, session_history)
+            except Exception:
+                logger.exception("Background escalation email failed for %s", name)
+
+        thread = threading.Thread(target=_send_with_logging, daemon=True)
         thread.start()
         subject = f"Chatbot Query from {name}"
         return {"ticket": {"id": "EMAIL-QUEUED", "subject": subject}}

@@ -181,6 +181,25 @@ function formatNumber(n) {
   return Number(n).toLocaleString('en-US');
 }
 
+const _listenerRegistry = new Map();
+
+function _addListener(el, type, fn) {
+  if (!_listenerRegistry.has(el)) _listenerRegistry.set(el, {});
+  const handlers = _listenerRegistry.get(el);
+  if (handlers[type]) el.removeEventListener(type, handlers[type]);
+  handlers[type] = fn;
+  el.addEventListener(type, fn);
+}
+
+function destroyListeners() {
+  _listenerRegistry.forEach((handlers, el) => {
+    Object.entries(handlers).forEach(([type, fn]) => {
+      el.removeEventListener(type, fn);
+    });
+  });
+  _listenerRegistry.clear();
+}
+
 
 /* ================================================================
    SECTION 2 - PORTAL APP CLASS
@@ -210,15 +229,23 @@ class PortalApp {
    */
   async init() {
     this._applyTheme();
-    await this._refreshLabelDefs();
 
+    // Ask the server whether our HttpOnly session cookie is still valid.
+    // localStorage auth-state is a UI hint only — server is source of truth.
     const auth = storageManager.getAuth();
-    if (auth.authenticated && auth.apiKey) {
+    const serverAuthed = await storageManager.hasValidSession();
+
+    if (serverAuthed && auth.authenticated) {
+      await this._refreshLabelDefs();
       this._showPortal(auth.user);
     } else {
+      if (auth.authenticated) {
+        storageManager.clearAuth();
+      }
       this._showLogin();
     }
 
+    destroyListeners();
     this._bindGlobalEvents();
   }
 
@@ -344,16 +371,16 @@ class PortalApp {
     }
 
     try {
-      // Validate the API key against the backend
-      const isValid = await storageManager.validateApiKey(password);
+      // Exchange credentials for an HttpOnly session cookie set by the server.
+      const result = await storageManager.login(username.toLowerCase(), password);
 
-      if (!isValid) {
+      if (!result.ok) {
         this._setLoginError('Invalid username or password.');
         return;
       }
 
-      const user = { username: username.toLowerCase(), role: 'admin' };
-      storageManager.setAuth(user, password);
+      const user = result.user || { username: username.toLowerCase(), role: 'admin' };
+      storageManager.setAuth(user);
       this._showPortal(user);
       this.showToast('Welcome back, ' + user.username + '!', 'success');
 
@@ -369,9 +396,10 @@ class PortalApp {
   }
 
   /**
-   * Log out: clear auth state, return to login screen.
+   * Log out: ask server to clear the session cookie, then reset local state.
    */
-  handleLogout() {
+  async handleLogout() {
+    await storageManager.logoutServer();
     storageManager.clearAuth();
     this.currentView = 'dashboard';
     this.currentFilters = {};
@@ -491,38 +519,38 @@ class PortalApp {
   renderDashboard() {
     const stats = storageManager.getStats();
 
-    this._setText('statTotal', formatNumber(stats.total));
-    this._setText('statAvgMessages', stats.avgMessagesPerConv != null ? stats.avgMessagesPerConv.toFixed(1) : '-');
-    this._setText('statEscalation', stats.escalationRate != null ? stats.escalationRate + '%' : '-');
-    this._setText('statUnknown', stats.unknownRate != null ? stats.unknownRate + '%' : '-');
-    this._setText('statAvgRating', stats.avgRating != null ? stats.avgRating.toFixed(1) + ' / 5' : 'N/A');
-    this._setText('statThisWeek', formatNumber(stats.conversationsThisWeek));
+    this._setText('statTotal', formatNumber(stats?.total ?? 0));
+    this._setText('statAvgMessages', stats?.avgMessagesPerConv != null ? stats.avgMessagesPerConv.toFixed(1) : '-');
+    this._setText('statEscalation', stats?.escalationRate != null ? stats.escalationRate + '%' : '-');
+    this._setText('statUnknown', stats?.unknownRate != null ? stats.unknownRate + '%' : '-');
+    this._setText('statAvgRating', stats?.avgRating != null ? stats.avgRating.toFixed(1) + ' / 5' : 'N/A');
+    this._setText('statThisWeek', formatNumber(stats?.conversationsThisWeek ?? 0));
 
     // Populate subtitle/extra-info spans where they exist
     const totalSub = document.querySelector('#statTotal + .stat-card-subtitle, [data-stat-sub="total"]');
     if (totalSub) {
-      totalSub.textContent = stats.ratedCount + ' rated, ' + stats.unratedCount + ' unrated';
+      totalSub.textContent = (stats?.ratedCount ?? 0) + ' rated, ' + (stats?.unratedCount ?? 0) + ' unrated';
     }
 
     const escalationSub = document.querySelector('#statEscalation + .stat-card-subtitle, [data-stat-sub="escalation"]');
     if (escalationSub) {
-      escalationSub.textContent = (stats.byStatus.escalated || 0) + ' of ' + stats.total + ' conversations';
+      escalationSub.textContent = (stats?.byStatus?.escalated ?? 0) + ' of ' + (stats?.total ?? 0) + ' conversations';
     }
 
     const weekSub = document.querySelector('#statThisWeek + .stat-card-subtitle, [data-stat-sub="week"]');
     if (weekSub) {
-      weekSub.textContent = stats.conversationsToday + ' today';
+      weekSub.textContent = (stats?.conversationsToday ?? 0) + ' today';
     }
 
     const busiestSub = document.querySelector('[data-stat-sub="busiest"]');
-    if (busiestSub && stats.busiestHour !== null) {
+    if (busiestSub && stats?.busiestHour != null) {
       const hourLabel = stats.busiestHour.toString().padStart(2, '0') + ':00';
       busiestSub.textContent = 'Busiest hour: ' + hourLabel;
     }
 
     // Language distribution in subtitle
     const langSub = document.querySelector('[data-stat-sub="language"]');
-    if (langSub && stats.byLanguage) {
+    if (langSub && stats?.byLanguage) {
       const parts = Object.entries(stats.byLanguage)
         .map(([lang, count]) => lang.toUpperCase() + ': ' + count)
         .join(', ');
@@ -531,7 +559,7 @@ class PortalApp {
 
     // Label distribution summary (top 5 labels) in a dashboard element if present
     const labelSummary = document.querySelector('[data-stat-sub="labels"]');
-    if (labelSummary && stats.labelCounts) {
+    if (labelSummary && stats?.labelCounts) {
       const sorted = Object.entries(stats.labelCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5);
@@ -545,7 +573,7 @@ class PortalApp {
     // Notes count
     const notesSub = document.querySelector('[data-stat-sub="notes"]');
     if (notesSub) {
-      notesSub.textContent = stats.notesCount + ' notes across all conversations';
+      notesSub.textContent = (stats?.notesCount ?? 0) + ' notes across all conversations';
     }
   }
 
@@ -1690,7 +1718,7 @@ class PortalApp {
     // --- Add label button ---
     const addLabelBtn = document.getElementById('addLabelBtn');
     if (addLabelBtn) {
-      addLabelBtn.addEventListener('click', (e) => {
+      _addListener(addLabelBtn, 'click', (e) => {
         e.stopPropagation();
         self._toggleAddLabelMenu();
       });
@@ -1699,7 +1727,7 @@ class PortalApp {
     // --- Add label menu: event delegation ---
     const addLabelMenu = document.getElementById('addLabelMenu');
     if (addLabelMenu) {
-      addLabelMenu.addEventListener('click', async (e) => {
+      _addListener(addLabelMenu, 'click', async (e) => {
         const menuItem = e.target.closest('.add-label-menu-item');
         if (menuItem) {
           const label = menuItem.getAttribute('data-label');
@@ -1711,19 +1739,19 @@ class PortalApp {
     // --- Rating buttons ---
     const ratingUp = document.getElementById('ratingUp');
     const ratingDown = document.getElementById('ratingDown');
-    if (ratingUp) ratingUp.addEventListener('click', async () => await self._handleRating('up'));
-    if (ratingDown) ratingDown.addEventListener('click', async () => await self._handleRating('down'));
+    if (ratingUp) _addListener(ratingUp, 'click', async () => await self._handleRating('up'));
+    if (ratingDown) _addListener(ratingDown, 'click', async () => await self._handleRating('down'));
 
     // --- Add note ---
     const addNoteBtn = document.getElementById('addNoteBtn');
     if (addNoteBtn) {
-      addNoteBtn.addEventListener('click', async () => await self._handleAddNote());
+      _addListener(addNoteBtn, 'click', async () => await self._handleAddNote());
     }
 
     // Enter key in notes textarea (Ctrl/Cmd + Enter to submit)
     const notesTextarea = document.getElementById('notesTextarea');
     if (notesTextarea) {
-      notesTextarea.addEventListener('keydown', async (e) => {
+      _addListener(notesTextarea, 'keydown', async (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           await self._handleAddNote();
@@ -1734,13 +1762,13 @@ class PortalApp {
     // --- Detail export button ---
     const detailExportBtn = document.getElementById('detailExportBtn');
     if (detailExportBtn) {
-      detailExportBtn.addEventListener('click', () => self._showExportModal());
+      _addListener(detailExportBtn, 'click', () => self._showExportModal());
     }
 
     // --- Detail status select ---
     const detailStatusSelect = document.getElementById('detailStatusSelect');
     if (detailStatusSelect) {
-      detailStatusSelect.addEventListener('change', async (e) => {
+      _addListener(detailStatusSelect, 'change', async (e) => {
         if (!self.currentConversationId) return;
         const newStatus = e.target.value;
         e.target.disabled = true;
@@ -1764,8 +1792,8 @@ class PortalApp {
     const globalSearch = document.getElementById('globalSearch');
     if (globalSearch) {
       const debouncedGlobalSearch = debounce((val) => self.handleSearch(val), 300);
-      globalSearch.addEventListener('input', (e) => debouncedGlobalSearch(e.target.value));
-      globalSearch.addEventListener('keydown', (e) => {
+      _addListener(globalSearch, 'input', (e) => debouncedGlobalSearch(e.target.value));
+      _addListener(globalSearch, 'keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           self.handleSearch(e.target.value);
@@ -1782,7 +1810,7 @@ class PortalApp {
     searchFilterIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
-        el.addEventListener('change', () => {
+        _addListener(el, 'change', () => {
           const q = document.getElementById('globalSearch');
           if (q && q.value.trim()) self.handleSearch(q.value);
         });
@@ -1792,7 +1820,7 @@ class PortalApp {
     // --- Search results: event delegation ---
     const searchResults = document.getElementById('searchResults');
     if (searchResults) {
-      searchResults.addEventListener('click', (e) => {
+      _addListener(searchResults, 'click', (e) => {
         const card = e.target.closest('.search-result-card');
         if (card) {
           const id = card.getAttribute('data-id');
@@ -1809,19 +1837,19 @@ class PortalApp {
     // --- Export button ---
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) {
-      exportBtn.addEventListener('click', () => self._handleExport());
+      _addListener(exportBtn, 'click', () => self._handleExport());
     }
 
     // --- Export select all / select none buttons ---
     const exportSelectAllBtn = document.getElementById('exportSelectAll');
     if (exportSelectAllBtn) {
-      exportSelectAllBtn.addEventListener('click', () => {
+      _addListener(exportSelectAllBtn, 'click', () => {
         document.querySelectorAll('.export-conv-checkbox').forEach(cb => cb.checked = true);
       });
     }
     const exportSelectNoneBtn = document.getElementById('exportSelectNone');
     if (exportSelectNoneBtn) {
-      exportSelectNoneBtn.addEventListener('click', () => {
+      _addListener(exportSelectNoneBtn, 'click', () => {
         document.querySelectorAll('.export-conv-checkbox').forEach(cb => cb.checked = false);
       });
     }
@@ -1829,22 +1857,22 @@ class PortalApp {
     // --- Export modal ---
     const modalClose = document.getElementById('modalClose');
     if (modalClose) {
-      modalClose.addEventListener('click', () => self._hideExportModal());
+      _addListener(modalClose, 'click', () => self._hideExportModal());
     }
 
     const modalExportBtn = document.getElementById('modalExportBtn');
     if (modalExportBtn) {
-      modalExportBtn.addEventListener('click', () => self._handleModalExport());
+      _addListener(modalExportBtn, 'click', () => self._handleModalExport());
     }
 
     const modalCancel = document.getElementById('exportModalCancel');
     if (modalCancel) {
-      modalCancel.addEventListener('click', () => self._hideExportModal());
+      _addListener(modalCancel, 'click', () => self._hideExportModal());
     }
 
     const exportModal = document.getElementById('exportModal');
     if (exportModal) {
-      exportModal.addEventListener('click', (e) => {
+      _addListener(exportModal, 'click', (e) => {
         // Close on backdrop click (not on modal content)
         if (e.target === exportModal) {
           self._hideExportModal();
@@ -1855,14 +1883,14 @@ class PortalApp {
     // --- Settings ---
     const themeSelect = document.getElementById('settingTheme');
     if (themeSelect) {
-      themeSelect.addEventListener('change', (e) => {
+      _addListener(themeSelect, 'change', (e) => {
         self._updateSetting('theme', e.target.value);
       });
     }
 
     const pageSizeInput = document.getElementById('settingPageSize');
     if (pageSizeInput) {
-      pageSizeInput.addEventListener('change', (e) => {
+      _addListener(pageSizeInput, 'change', (e) => {
         const val = parseInt(e.target.value, 10);
         if (val > 0 && val <= 100) {
           self._updateSetting('pageSize', val);
@@ -1872,18 +1900,18 @@ class PortalApp {
 
     const langSelect = document.getElementById('settingLanguage');
     if (langSelect) {
-      langSelect.addEventListener('change', (e) => {
+      _addListener(langSelect, 'change', (e) => {
         self._updateSetting('defaultLanguageFilter', e.target.value);
       });
     }
 
     const resetBtn = document.getElementById('resetDataBtn');
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => self._handleResetData());
+      _addListener(resetBtn, 'click', () => self._handleResetData());
     }
 
     // --- Global keyboard shortcuts ---
-    document.addEventListener('keydown', (e) => {
+    _addListener(document, 'keydown', (e) => {
       // Escape closes modals and dropdowns
       if (e.key === 'Escape') {
         self._hideExportModal();
@@ -1892,7 +1920,7 @@ class PortalApp {
     });
 
     // --- Close add-label menu when clicking outside ---
-    document.addEventListener('click', (e) => {
+    _addListener(document, 'click', (e) => {
       const menu = document.getElementById('addLabelMenu');
       const btn = document.getElementById('addLabelBtn');
       if (menu && menu.classList.contains('open')) {

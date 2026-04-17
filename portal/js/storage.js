@@ -121,8 +121,7 @@ class StorageManager {
     this._write(KEYS.AUTH, {
       authenticated: false,
       user: null,
-      loginTime: null,
-      apiKey: null
+      loginTime: null
     });
     localStorage.setItem(KEYS.VERSION, STORAGE_VERSION);
   }
@@ -163,6 +162,8 @@ class StorageManager {
 
   /**
    * Make an authenticated API call to the backend.
+   * Auth is carried by the HttpOnly `admin_session` cookie (set by /admin/api/login),
+   * so we only need `credentials: 'include'` — no key is ever read from JS.
    * Auto-logouts on 401.
    *
    * @param {string} method - HTTP method
@@ -171,19 +172,11 @@ class StorageManager {
    * @returns {Promise<{ok: boolean, data?: any, error?: string}>}
    */
   async _apiCall(method, path, body = null) {
-    const auth = this.getAuth();
-    const adminKey = auth.apiKey;
-    if (!adminKey) {
-      return { ok: false, error: 'Not authenticated' };
-    }
-
     try {
       const options = {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Key': adminKey
-        }
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' }
       };
 
       if (body !== null) {
@@ -215,38 +208,76 @@ class StorageManager {
   // ── Auth ───────────────────────────────────────────────────────
 
   getAuth() {
-    return this._read(KEYS.AUTH) || { authenticated: false, user: null, loginTime: null, apiKey: null };
+    return this._read(KEYS.AUTH) || { authenticated: false, user: null, loginTime: null };
   }
 
-  setAuth(user, apiKey) {
+  setAuth(user) {
     return this._write(KEYS.AUTH, {
       authenticated: true,
       user: { username: user.username, role: user.role || 'viewer' },
-      loginTime: new Date().toISOString(),
-      apiKey: apiKey || null
+      loginTime: new Date().toISOString()
     });
   }
 
   clearAuth() {
-    return this._write(KEYS.AUTH, { authenticated: false, user: null, loginTime: null, apiKey: null });
+    return this._write(KEYS.AUTH, { authenticated: false, user: null, loginTime: null });
   }
 
   // ── API Sync ────────────────────────────────────────────────────
 
   /**
-   * Validate an admin API key against the backend.
-   * @param {string} apiKey
+   * Log in against the backend and let it set an HttpOnly session cookie.
+   * @param {string} username
+   * @param {string} password - the ADMIN_API_KEY
+   * @returns {Promise<{ok: boolean, user?: object, error?: string}>}
+   */
+  async login(username, password) {
+    try {
+      const resp = await fetch('/admin/api/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      if (!resp.ok) {
+        return { ok: false, error: `Login failed (${resp.status})` };
+      }
+      const data = await resp.json();
+      return { ok: true, user: data.user };
+    } catch (e) {
+      console.error('StorageManager: login failed', e);
+      return { ok: false, error: e.message };
+    }
+  }
+
+  /**
+   * Explicitly ask the backend to clear the session cookie. Safe to call even
+   * if no session exists.
+   */
+  async logoutServer() {
+    try {
+      await fetch('/admin/api/logout', {
+        method: 'POST',
+        credentials: 'include'
+      });
+    } catch (e) {
+      console.warn('StorageManager: logout request failed', e);
+    }
+  }
+
+  /**
+   * Check whether the browser already holds a valid session cookie.
+   * Used on page load to skip the login screen if possible.
    * @returns {Promise<boolean>}
    */
-  async validateApiKey(apiKey) {
+  async hasValidSession() {
     try {
-      const resp = await fetch('/admin/api/conversations', {
+      const resp = await fetch('/admin/api/session', {
         method: 'GET',
-        headers: { 'X-Admin-Key': apiKey }
+        credentials: 'include'
       });
       return resp.ok;
     } catch (e) {
-      console.error('StorageManager: API key validation failed', e);
       return false;
     }
   }
@@ -892,6 +923,12 @@ class StorageManager {
   }
 
   _toCSV(conversations) {
+    const MAX_EXPORT_ROWS = 5000;
+    const exportData = conversations.slice(0, MAX_EXPORT_ROWS);
+    if (conversations.length > MAX_EXPORT_ROWS) {
+      console.warn(`CSV export limited to ${MAX_EXPORT_ROWS} rows (${conversations.length} total)`);
+    }
+    conversations = exportData;
     const rows = [];
     rows.push([
       'conversation_id', 'session_id', 'started_at', 'ended_at',

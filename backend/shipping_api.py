@@ -50,6 +50,27 @@ class ShippingAPIClient:
                 raise
         return self._soap_client
 
+    def close(self) -> None:
+        """Close the zeep client and release its internal HTTP session."""
+        try:
+            if getattr(self, "_soap_client", None):
+                transport = getattr(self._soap_client, "transport", None)
+                if transport and hasattr(transport, "session"):
+                    transport.session.close()
+                self._soap_client = None
+        except Exception:
+            logger.exception("Error closing SOAP client")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def __del__(self):
+        self.close()
+
     def _get_session_id(self) -> str:
         """
         Get a valid StatusWeb session ID.
@@ -97,12 +118,14 @@ class ShippingAPIClient:
             logger.error("StatusWeb session request failed: %s", e)
             raise ConnectionError(f"Could not authenticate with StatusWeb: {e}")
 
-    def get_shipment_status(self, tracking_code: str) -> Dict[str, Any]:
+    def get_shipment_status(self, tracking_code: str, _session_retries: int = 0) -> Dict[str, Any]:
         """
         Get shipment status from StatusWeb.
 
         Args:
             tracking_code: Van Den Heuvel zendingnummer/vrachtnummer
+            _session_retries: internal counter guarding against infinite recursion
+                when StatusWeb keeps returning SESSION_EXPIRED.
 
         Returns:
             Dict with keys: success (bool), status (str), details (dict), error (str)
@@ -150,11 +173,19 @@ class ShippingAPIClient:
                 }
 
             if error_code in (SW_SESSION_EXPIRED, SW_INVALID_SESSION):
-                # Session expired — clear cache and retry once
-                logger.warning("StatusWeb session expired, refreshing...")
+                # Session expired — clear cache and retry up to MAX_SESSION_RETRIES times.
+                if _session_retries >= 2:
+                    logger.error("StatusWeb session stuck expired after %d retries", _session_retries)
+                    return {
+                        "success": False,
+                        "status": "error",
+                        "details": {},
+                        "error": "StatusWeb session kon niet worden vernieuwd"
+                    }
+                logger.warning("StatusWeb session expired, refreshing (retry %d)...", _session_retries + 1)
                 self._session_id = None
                 self._session_expires = None
-                return self.get_shipment_status(tracking_code)
+                return self.get_shipment_status(tracking_code, _session_retries=_session_retries + 1)
 
             if error_code != SW_OK:
                 error_msg = getattr(result, 'Errorstring', 'Onbekende fout')
@@ -259,15 +290,17 @@ class ShippingAPIClient:
 
     def _mock_response(self, tracking_code: str) -> Dict[str, Any]:
         """Mock response for testing without API key."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
         return {
             "success": True,
             "status": "in_transit",
             "details": {
                 "status_description": "Onderweg naar afleveradres",
                 "tracking_code": tracking_code,
-                "date": "2026-02-16",
+                "date": today,
                 "time": "14:30",
-                "estimated_delivery": "2026-02-17",
+                "estimated_delivery": tomorrow,
                 "location": "Distributiecentrum Utrecht",
                 "reference": None,
                 "note": "",

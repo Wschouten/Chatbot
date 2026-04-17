@@ -35,6 +35,14 @@
         return;
     }
 
+    function _escHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
     // =============================================================================
     // CSS Styles (injected into page)
     // =============================================================================
@@ -297,15 +305,15 @@
                 <div class="gc-chat-header">
                     <div class="gc-header-info">
                         <span class="gc-status-dot"></span>
-                        <span>${CONFIG.brand} Support</span>
+                        <span>${_escHtml(CONFIG.brand)} Support</span>
                     </div>
                     <button class="gc-close-btn" aria-label="Close chat">&times;</button>
                 </div>
                 <div class="gc-consent-overlay" id="gc-consent">
                     <div class="gc-consent-content">
                         <h3>Privacy Notice</h3>
-                        <p>Om je te helpen slaan we je chatberichten tijdelijk op. Je gegevens worden verwerkt conform onze <a href="${CONFIG.privacyUrl}" target="_blank">privacyverklaring</a>.</p>
-                        <p class="gc-subtitle">To help you, we temporarily store your chat messages according to our <a href="${CONFIG.privacyUrl}" target="_blank">privacy policy</a>.</p>
+                        <p>Om je te helpen slaan we je chatberichten tijdelijk op. Je gegevens worden verwerkt conform onze <a href="${_escHtml(CONFIG.privacyUrl)}" target="_blank">privacyverklaring</a>.</p>
+                        <p class="gc-subtitle">To help you, we temporarily store your chat messages according to our <a href="${_escHtml(CONFIG.privacyUrl)}" target="_blank">privacy policy</a>.</p>
                         <div class="gc-consent-buttons">
                             <button class="gc-consent-btn gc-consent-accept" id="gc-accept">Akkoord / Accept</button>
                             <button class="gc-consent-btn gc-consent-decline" id="gc-decline">Weigeren / Decline</button>

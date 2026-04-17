@@ -9,6 +9,8 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+BASE_DATA_DIR = os.path.realpath("data")
+
 
 def cleanup_old_files(directory: str, max_age_days: int) -> dict:
     """Delete files older than max_age_days from the specified directory.
@@ -20,6 +22,11 @@ def cleanup_old_files(directory: str, max_age_days: int) -> dict:
     Returns:
         dict with 'deleted' count and 'errors' count
     """
+    directory = os.path.realpath(directory)
+    base = os.path.realpath(BASE_DATA_DIR)
+    if not directory.startswith(base + os.sep):
+        raise ValueError(f"Directory outside allowed base: {directory}")
+
     if not os.path.exists(directory):
         logger.debug("Directory %s does not exist, skipping cleanup", directory)
         return {"deleted": 0, "errors": 0}

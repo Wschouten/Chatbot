@@ -198,7 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Escapes HTML first (XSS prevention), then applies safe transformations.
     // =============================================================================
     function renderBotMessage(text) {
-        const escaped = text
+        const MAX_MSG_LEN = 10000;
+        const safeText = (text || '').slice(0, MAX_MSG_LEN);
+        const escaped = safeText
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
