@@ -149,14 +149,14 @@ Improvements to implement after the chatbot is live. Features 52, 55, 57, 58, 59
 
 | Feature | Name | Status | Effort | Dependencies | Blocks |
 |---------|------|--------|--------|--------------|--------|
-| **52** | [Delete Conversations](52-delete-conversations.md) | 📋 Todo | ~1h | None | 56 |
-| **53** | [Uptime Monitoring Setup](53-uptime-monitoring.md) | 📋 Todo | ~15 min | Feature 46 (go-live) | — |
-| **54** | [Shipping API Live Integration](54-shipping-api-live.md) | 🚫 Blocked | ~30 min | Feature 46 + StatusWeb IP whitelist | — |
-| **55** | [Automated Backend Tests](55-automated-tests.md) | 📋 Todo | ~2-3h | None | — |
-| **56** | [Bulk Conversation Operations](56-bulk-conversation-operations.md) | 📋 Todo | ~2h | Feature 52 | — |
-| **57** | [Knowledge Base Update Workflow](57-knowledge-base-workflow.md) | 📋 Todo | ~1h | None | — |
-| **58** | [Analytics Dashboard Enhancements](58-analytics-enhancements.md) | 📋 Todo | ~2-3h | None | — |
-| **59** | [Database Backup & Restore](59-database-backup.md) | 📋 Todo | ~30 min | None | — |
+| **52** | [Delete Conversations](52-delete-conversations.md) | 📋 Todo | ~1h | None | 56 |(For later)
+| **53** | [Uptime Monitoring Setup](53-uptime-monitoring.md) | 📋 Todo | ~15 min | Feature 46 (go-live) | — |(For later)
+| **54** | [Shipping API Live Integration](54-shipping-api-live.md) | 🚫 Blocked | ~30 min | Feature 46 + StatusWeb IP whitelist | — |(For later)
+| **55** | [Automated Backend Tests](55-automated-tests.md) | 📋 Todo | ~2-3h | None | — |(For later)
+| **56** | [Bulk Conversation Operations](56-bulk-conversation-operations.md) | 📋 Todo | ~2h | (For later)Feature 52 | — |
+| **57** | [Knowledge Base Update Workflow](57-knowledge-base-workflow.md) | 📋 Todo | ~1h | None |(For later) — |
+| **58** | [Analytics Dashboard Enhancements](58-analytics-enhancements.md) | 📋 Todo | ~2-3h | None | — |(For later)
+| **59** | [Database Backup & Restore](59-database-backup.md) | 📋 Todo | ~30 min | None | — |(For later)
 
 ### Dependency Diagram (Post-Launch)
 
@@ -176,3 +176,70 @@ AFTER go-live (Feature 46):
 **Total effort:** ~7-8 hours
 **Recommended first:** 52 (high-value, low-effort admin portal improvement) + 53 (5 min setup, production safety) + 59 (data protection)
 **Can be parallel:** 52, 55, 57, 58, 59 have no dependencies and can all be worked on simultaneously
+
+---
+
+## WISMO Flow — Shopify + Zapier Verification (Features 60–64)
+
+New 5-step identity-verified shipping flow replacing the old Exact 200 + zendingnummer + postcode flow.
+
+| Feature | Name | Status | Effort | Dependencies | Blocks |
+|---------|------|--------|--------|--------------|--------|
+| **60** | Archive exact200_client.py | ✅ Done | ~15 min | None | 61 |
+| **61** | WISMO Identification (Order # + Email) | ✅ Done | ~45 min | Feature 60 | 63 |
+| **62** | Zapier WISMO Webhook Function | ✅ Done | ~30 min | None | 63 |
+| **63** | Zapier Response Handler & State Transition | ✅ Done | ~30 min | Features 61 + 62 | — |
+| **64** | Skip Postcode — Direct API Call | ✅ Done | ~20 min | None | — |
+
+### Dependency Diagram (WISMO Flow)
+
+```
+PARALLEL START:
+├─→ 60 (archive exact200) ──→ 61 (identification states)
+│                                          │
+├─→ 62 (zapier webhook fn) ────────────────┴──→ 63 (response handler + state transition)
+│
+└─→ 64 (skip postcode) — independent, can run in parallel with everything above
+```
+
+**Critical path (minimum sequential steps):** 60 → 61 → 63
+**Can start immediately (no dependencies):** 62, 64
+**All 5 features must be complete for the end-to-end flow to work.**
+
+| Can start now | Must wait for |
+|---|---|
+| 60 (archive) | — |
+| 62 (Zapier fn) | — |
+| 64 (skip postcode) | — |
+| 61 (identification) | 60 |
+| 63 (response handler) | 61 + 62 |
+
+### Parallelisation Strategy
+
+**Option A — Single developer (sequential):**
+1. 60 (15 min) → 61 (45 min) → 62 (30 min) → 63 (30 min) → 64 (20 min)
+   **Total: ~2h 20min**
+
+**Option B — Two developers / two agents (parallel):**
+- Dev A: 60 → 61 → 63
+- Dev B: 62 (start immediately) + 64 (start immediately)
+  **Total: ~1h 30min**
+
+### Complete WISMO Flow (after all 5 features)
+
+```
+Tracking intent detected
+  → awaiting_shopify_order_number  (ask for Shopify order #)
+      → user provides #12345
+  → awaiting_shopify_email  (ask for email)
+      → user provides email
+  → _call_zapier_wismo(order_number, email)
+      ├─ "not_found" → "Cannot find order" — STOP
+      ├─ "error"     → "Unable to verify" — STOP
+      └─ "ok"        → awaiting_order_number (ask for zendingnummer)
+          → user provides zendingnummer
+      → get_shipment_status(zendingnummer) via SOAP
+      → format_shipping_response() — ETA + tracking link
+```
+
+**Total effort:** ~2h 20min (sequential) / ~1h 30min (parallel)

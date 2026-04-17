@@ -29,7 +29,7 @@ class RAGEvaluator:
         self.test_set_path = test_set_path
         self.rag_engine = RagEngine()
         self.openai_client = OpenAI()
-        self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.2')
+        self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
         self.results: list[dict[str, Any]] = []
 
     def load_test_set(self) -> list[dict[str, Any]]:

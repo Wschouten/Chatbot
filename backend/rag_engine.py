@@ -105,7 +105,7 @@ class RagEngine:
         self.chroma_client: Any = None
 
         # Feature 10: Make LLM Model Configurable
-        self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.2')
+        self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
         self.embedding_model = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
 
         # Feature 13: Retrieval Quality Improvements

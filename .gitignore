@@ -65,3 +65,4 @@ backend/*_log_*.txt
 # Misc
 nul
 %WilcoS%/
+.gstack/
