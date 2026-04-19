@@ -386,12 +386,7 @@ class StorageManager {
    * @param {string} [apiKey] - If not given, uses stored key
    * @returns {Promise<{ synced: number, errors: string[] }>}
    */
-  async syncFromApi(apiKey) {
-    const key = apiKey || this.getAuth().apiKey;
-    if (!key) {
-      return { synced: 0, errors: ['No API key available'] };
-    }
-
+  async syncFromApi() {
     try {
       const result = await this._apiCall('GET', '/admin/api/conversations');
 
