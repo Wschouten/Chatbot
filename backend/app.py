@@ -352,6 +352,11 @@ HUMAN_ESCALATION_RE = re.compile(
     r'|human\s+(agent|support|representative)|real\s+person|live\s+(agent|chat|support)',
     re.IGNORECASE
 )
+PHONE_CONTACT_RE = re.compile(
+    r'\b(telefonisch|telefoon|bellen|bel\s+mij|bel\s+me|opbellen|per\s+telefoon|telefooncontact)\b'
+    r'|\b(phone|call\s+me|telephone|ring\s+me|call\s+you|over\s+the\s+phone|by\s+phone)\b',
+    re.IGNORECASE
+)
 FRUSTRATION_RE = re.compile(
     r'\b(ik baal\b|behoorlijk balen|heel erg balen'
     r'|dit is belachelijk|absoluut belachelijk|volkomen belachelijk'
@@ -885,6 +890,19 @@ def _handle_chat(request_id: str) -> Response:
     # STATE: AWAITING_NAME (with flexible intent detection)
     # ---------------------------------------------------------
     if current_state == 'awaiting_name':
+        if PHONE_CONTACT_RE.search(user_message):
+            state_data = {'state': 'inactive', 'chat_history': chat_history}
+            save_session_state(session_id, state_data)
+            resp = (
+                "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
+                "Kan ik je nog ergens anders mee helpen?"
+                if user_lang == 'nl' else
+                "You can reach us by phone at **0342 – 784 000**. "
+                "Is there anything else I can help you with?"
+            )
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
+
         # Use LLM to understand what the user actually wants
         intent = rag_engine.detect_ticket_intent(user_message)
         logger.debug("Ticket intent detected: %s", intent)
@@ -919,6 +937,19 @@ def _handle_chat(request_id: str) -> Response:
     # STATE: AWAITING_EMAIL (with decline detection)
     # ---------------------------------------------------------
     if current_state == 'awaiting_email':
+        if PHONE_CONTACT_RE.search(user_message):
+            state_data = {'state': 'inactive', 'chat_history': chat_history}
+            save_session_state(session_id, state_data)
+            resp = (
+                "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
+                "Kan ik je nog ergens anders mee helpen?"
+                if user_lang == 'nl' else
+                "You can reach us by phone at **0342 – 784 000**. "
+                "Is there anything else I can help you with?"
+            )
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
+
         email = user_message.strip()
 
         # If it's not a valid email, check if user is declining
@@ -1440,6 +1471,19 @@ def _handle_chat(request_id: str) -> Response:
         save_session_state(session_id, state_data)
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
+
+    # Detect phone contact request — provide number directly, don't start email escalation
+    if PHONE_CONTACT_RE.search(user_message):
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        resp = (
+            "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
+            "Kan ik je nog ergens anders mee helpen?"
+            if detected_lang == 'nl' else
+            "You can reach us by phone at **0342 – 784 000**. "
+            "Is there anything else I can help you with?"
+        )
+        _log_chat_message(session_id, request_id, user_message, resp)
+        return jsonify({"response": resp, "request_id": request_id})
 
     # Detect explicit human escalation request (pre-RAG, deterministic)
     if HUMAN_ESCALATION_RE.search(user_message):
