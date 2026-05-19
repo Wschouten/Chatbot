@@ -158,7 +158,7 @@
             word-wrap: break-word;
         }
         .gc-bot-message {
-            background-color: var(--gc-secondary);
+            background-color: #f2f2f2;
             color: var(--gc-text);
             align-self: flex-start;
             border-bottom-left-radius: 2px;
@@ -209,7 +209,7 @@
             display: flex;
             gap: 4px;
             padding: 12px 14px;
-            background-color: var(--gc-secondary);
+            background-color: #f2f2f2;
             border-radius: 12px;
             align-self: flex-start;
             border-bottom-left-radius: 2px;
