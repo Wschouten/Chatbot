@@ -447,8 +447,8 @@
             ['align-items',    'center'],
             ['flex-wrap',      'nowrap'],
             ['gap',            '8px'],
-            ['font-size',      '15px'],
-            ['font-weight',    '500'],
+            ['font-size',      '14px'],
+            ['font-weight',    '600'],
             ['line-height',    '1.2'],
         ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
 
@@ -457,7 +457,7 @@
             ['white-space',  'nowrap'],
             ['overflow',     'hidden'],
             ['text-overflow','ellipsis'],
-            ['font-size',    '15px'],
+            ['font-size',    '14px'],
         ].forEach(([prop, val]) => headerText.style.setProperty(prop, val, 'important'));
 
         // Fix close button — push to right corner, remove Shopify sizing
@@ -468,7 +468,7 @@
             ['padding-bottom','0'],
             ['padding-left',  '0'],
             ['margin-left',   'auto'],
-            ['font-size',     '24px'],
+            ['font-size',     '22px'],
             ['line-height',   '1'],
             ['width',         'auto'],
             ['height',        'auto'],
@@ -476,6 +476,7 @@
             ['flex-shrink',   '0'],
             ['background',    'none'],
             ['border',        'none'],
+            ['color',         'rgba(255,255,255,0.8)'],
         ].forEach(([prop, val]) => closeBtn.style.setProperty(prop, val, 'important'));
 
         let isOpen = false;
