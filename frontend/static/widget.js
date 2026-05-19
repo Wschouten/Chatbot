@@ -53,7 +53,7 @@
             --gc-text: #333333;
             --gc-white: #FFFFFF;
             --gc-gray: #888888;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 14px;
             line-height: 1.4;
             box-sizing: border-box;
@@ -116,7 +116,7 @@
         .gc-chat-header {
             background-color: var(--gc-primary);
             color: var(--gc-white);
-            padding: 16px 20px;
+            padding: 14px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -126,7 +126,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            font-weight: 500;
+            font-weight: 600;
+            font-size: 14px;
         }
         .gc-status-dot {
             width: 8px;
@@ -138,11 +139,15 @@
         .gc-close-btn {
             background: none;
             border: none;
-            color: var(--gc-white);
-            font-size: 24px;
+            color: rgba(255,255,255,0.8);
+            font-size: 22px;
             cursor: pointer;
             padding: 0;
             line-height: 1;
+            transition: color 0.2s;
+        }
+        .gc-close-btn:hover {
+            color: #ffffff;
         }
         .gc-chat-body {
             flex: 1;
@@ -176,7 +181,7 @@
             border-bottom-right-radius: 2px;
         }
         .gc-input-area {
-            padding: 12px 16px;
+            padding: 16px;
             border-top: 1px solid #eee;
             display: flex;
             gap: 10px;
@@ -344,6 +349,15 @@
     // Inject styles and HTML into page
     // =============================================================================
     function init() {
+        // Load Inter font (matches Railway demo page)
+        if (!document.getElementById('gc-inter-font')) {
+            const fontLink = document.createElement('link');
+            fontLink.id = 'gc-inter-font';
+            fontLink.rel = 'stylesheet';
+            fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap';
+            document.head.appendChild(fontLink);
+        }
+
         // Inject CSS
         const styleEl = document.createElement('style');
         styleEl.id = 'gc-chatbot-styles';
