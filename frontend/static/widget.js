@@ -98,14 +98,20 @@
             background-color: var(--gc-white);
             border-radius: 12px;
             box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-            display: none;
+            display: flex;
             flex-direction: column;
             overflow: hidden;
             z-index: 2147483647;
             border: 1px solid #e0e0e0;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(20px);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
         #gc-chat-widget.gc-active {
-            display: flex;
+            opacity: 1;
+            pointer-events: all;
+            transform: translateY(0);
         }
         .gc-chat-header {
             background-color: var(--gc-primary);
@@ -630,9 +636,13 @@
         // Initialize
         checkConsent();
 
-        // Add welcome message
+        // Add welcome message with small gray English subtitle
         if (chatBody.children.length === 0) {
-            appendMessage(CONFIG.welcomeMessage + ' (I also speak English!)', 'bot');
+            const welcomeDiv = document.createElement('div');
+            welcomeDiv.className = 'gc-message gc-bot-message';
+            welcomeDiv.innerHTML = renderBotMessage(CONFIG.welcomeMessage) +
+                '<br><small style="color:#666;font-size:12px;">(I also speak English!)</small>';
+            chatBody.appendChild(welcomeDiv);
         }
     }
 
