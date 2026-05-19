@@ -82,7 +82,7 @@ body {
 .chat-header {
     background-color: var(--primary-color);
     color: var(--white);
-    padding: 16px 20px;
+    padding: 14px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -92,25 +92,32 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--white);
 }
 
 .status-dot {
     width: 8px;
     height: 8px;
-    background-color: #4CAF50; /* Brighter green for status */
+    background-color: #4CAF50;
     border-radius: 50%;
-    border: 1px solid rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.4);
 }
 
 .close-btn {
     background: none;
     border: none;
-    color: var(--white);
-    font-size: 24px;
+    color: rgba(255,255,255,0.8);
+    font-size: 22px;
     cursor: pointer;
     padding: 0;
     line-height: 1;
+    transition: color 0.2s;
+}
+
+.close-btn:hover {
+    color: var(--white);
 }
 
 .chat-body {
@@ -143,7 +150,7 @@ body {
 }
 
 .bot-message {
-    background-color: var(--secondary-color);
+    background-color: #f2f2f2;
     color: var(--text-color);
     align-self: flex-start;
     border-bottom-left-radius: 2px;
@@ -201,7 +208,7 @@ body {
     display: flex;
     gap: 4px;
     padding: 12px 14px;
-    background-color: var(--secondary-color);
+    background-color: #f2f2f2;
     border-radius: 12px;
     align-self: flex-start;
     border-bottom-left-radius: 2px;
