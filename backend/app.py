@@ -339,6 +339,18 @@ NO_SHIPMENT_NUMBER_RE = re.compile(
     r'|no\s+tracking|geen\s+zendingnummer|geen\s+trackingnummer)\b',
     re.IGNORECASE,
 )
+# Blocks the tracking flow for refund/return/complaint questions so the bot
+# doesn't ask for a shipment number when the customer needs a different type of help.
+RETURN_PAYMENT_RE = re.compile(
+    r'\b(terugbetaling|terugstorting|retour(?:neren)?|restitutie|geld\s+terug'
+    r'|refund|creditnota|klacht|klagen|beschadigd|kapot'
+    r'|fout\s+geleverd|verkeerd\s+geleverd|fout\s+ontvangen|verkeerd\s+ontvangen'
+    r'|niet\s+ontvangen|niet\s+goed\s+ontvangen|vermist\s+pakket|pakket\s+vermist'
+    r'|retour\s+sturen|terugsturen|article\s+return|money\s+back'
+    r'|wrong\s+item|damaged|broken|complaint|defect|schade'
+    r'|niet\s+tevreden|ontevreden)\b',
+    re.IGNORECASE,
+)
 HUMAN_ESCALATION_RE = re.compile(
     # Dutch: medewerker/collega spreken|praten
     r'(medewerker|collega)\s+(spreken|praten)'
@@ -722,6 +734,25 @@ def format_shipping_response(result: dict[str, Any], order_id: str) -> str:
     return msg
 
 
+def _format_price(price_min, price_max, currency: str, lang: str) -> str | None:
+    """Return a formatted price string, or None if no price data is available."""
+    if not price_min:
+        return None
+    symbol = "€" if currency == "EUR" else f"{currency} "
+    try:
+        if lang == "nl":
+            def fmt(v):
+                return symbol + f"{float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        else:
+            def fmt(v):
+                return symbol + f"{float(v):.2f}"
+        if price_max and abs(float(price_max) - float(price_min)) > 0.005:
+            return f"{fmt(price_min)} – {fmt(price_max)}"
+        return fmt(price_min)
+    except (ValueError, TypeError):
+        return None
+
+
 def format_stock_response(result: dict, lang: str, query: str = "") -> str:
     """Format a Shopify product availability result into a user-friendly message."""
     use_emojis = os.getenv("BRAND_USE_EMOJIS", "true").lower() == "true"
@@ -731,6 +762,7 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
         name = p["title"]
         url = p.get("url", "")
         inv = p.get("inventory") or 0
+        price_str = _format_price(p.get("price_min"), p.get("price_max"), p.get("currency", "EUR"), lang)
         if p["available"]:
             if lang == "nl":
                 if inv and inv < 10:
@@ -744,6 +776,8 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
                 msg = f"{'✅ ' if use_emojis else ''}Ja, **{name}** is beschikbaar!"
                 if stock_note:
                     msg += f" ({stock_note})"
+                if price_str:
+                    msg += f"\n{'💰 ' if use_emojis else ''}Prijs: {price_str}"
                 if url:
                     msg += f"\nBekijk het product: {url}"
             else:
@@ -758,6 +792,8 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
                 msg = f"{'✅ ' if use_emojis else ''}Yes, **{name}** is available!"
                 if stock_note:
                     msg += f" ({stock_note})"
+                if price_str:
+                    msg += f"\n{'💰 ' if use_emojis else ''}Price: {price_str}"
                 if url:
                     msg += f"\nView the product: {url}"
         else:
@@ -766,11 +802,15 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
                     f"{'😔 ' if use_emojis else ''}Helaas is **{name}** momenteel niet op voorraad.\n"
                     "Neem contact op via klantenservice@groundcovergroup.nl voor meer informatie."
                 )
+                if price_str:
+                    msg += f"\n{'💰 ' if use_emojis else ''}Normale prijs: {price_str}"
             else:
                 msg = (
                     f"{'😔 ' if use_emojis else ''}Unfortunately **{name}** is currently out of stock.\n"
                     "Please contact us at klantenservice@groundcovergroup.nl for more information."
                 )
+                if price_str:
+                    msg += f"\n{'💰 ' if use_emojis else ''}Regular price: {price_str}"
         return msg
 
     elif result["outcome"] == "multiple":
@@ -779,13 +819,21 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             lines = ["Ik vond meerdere producten die overeenkomen. Bedoel je een van deze?\n"]
             for i, p in enumerate(products, 1):
                 avail = "✅ beschikbaar" if p["available"] else "❌ niet op voorraad"
-                lines.append(f"{i}. **{p['title']}** — {avail}")
+                price_str = _format_price(p.get("price_min"), p.get("price_max"), p.get("currency", "EUR"), lang)
+                line = f"{i}. **{p['title']}** — {avail}"
+                if price_str:
+                    line += f" | {price_str}"
+                lines.append(line)
             lines.append("\nTyp het nummer of de naam van het product dat je bedoelt.")
         else:
             lines = ["I found a few matching products. Did you mean one of these?\n"]
             for i, p in enumerate(products, 1):
                 avail = "✅ available" if p["available"] else "❌ out of stock"
-                lines.append(f"{i}. **{p['title']}** — {avail}")
+                price_str = _format_price(p.get("price_min"), p.get("price_max"), p.get("currency", "EUR"), lang)
+                line = f"{i}. **{p['title']}** — {avail}"
+                if price_str:
+                    line += f" | {price_str}"
+                lines.append(line)
             lines.append("\nType the number or name of the product you're looking for.")
         return "\n".join(lines)
 
@@ -1097,7 +1145,8 @@ def _handle_chat(request_id: str) -> Response:
         if not token:
             logger.warning("SHOPIFY_STOREFRONT_TOKEN not set — returning mock stock response")
             return {"outcome": "found", "products": [
-                {"title": "Mock Product", "available": True, "inventory": 5, "url": "#"}
+                {"title": "Mock Product", "available": True, "inventory": 5, "url": "#",
+                 "price_min": "29.95", "price_max": "29.95", "currency": "EUR"}
             ]}
 
         # Sanitize query: strip any non-alphanumeric/space/hyphen chars, then cap length.
@@ -1116,6 +1165,10 @@ def _handle_chat(request_id: str) -> Response:
             "        availableForSale"
             "        totalInventory"
             "        onlineStoreUrl"
+            "        priceRange {"
+            "          minVariantPrice { amount currencyCode }"
+            "          maxVariantPrice { amount currencyCode }"
+            "        }"
             "      }"
             "    }"
             "  }"
@@ -1159,6 +1212,9 @@ def _handle_chat(request_id: str) -> Response:
                 "available": e["node"]["availableForSale"],
                 "inventory": e["node"].get("totalInventory") or 0,
                 "url": e["node"].get("onlineStoreUrl") or "",
+                "price_min": (e["node"].get("priceRange") or {}).get("minVariantPrice", {}).get("amount"),
+                "price_max": (e["node"].get("priceRange") or {}).get("maxVariantPrice", {}).get("amount"),
+                "currency": (e["node"].get("priceRange") or {}).get("minVariantPrice", {}).get("currencyCode", "EUR"),
             }
             for e in edges[:max_results]
         ]
@@ -1237,16 +1293,16 @@ def _handle_chat(request_id: str) -> Response:
                     response_text = (
                         "✅ Thank you, I found your order! "
                         "To retrieve the exact delivery time from our carrier, "
-                        "I need your **shipment tracking number**. "
-                        "(You should have received this separately by email.) "
+                        "I need your **shipment tracking number** (e.g. **400000001**). "
+                        "You should have received this separately by email. "
                         "What is your **shipment number**?"
                     )
                 else:
                     response_text = (
                         "✅ Bedankt, ik heb je bestelling gevonden! "
                         "Om de exacte levertijd bij de vervoerder op te halen, "
-                        "heb ik je **zendingnummer** nodig. "
-                        "(Dit heb je apart per e-mail ontvangen.) "
+                        "heb ik je **zendingnummer** nodig (bijv. **400000001**). "
+                        "Dit heb je apart per e-mail ontvangen. "
                         "Wat is je **zendingnummer**?"
                     )
             else:
@@ -1270,49 +1326,74 @@ def _handle_chat(request_id: str) -> Response:
             # Fall through to normal processing
         else:
             user_lang = state_data.get('language', 'nl')
-            number_match = re.search(r'\b(\d{6,})\b', user_message)
+            # Strip trailing punctuation (e.g. "6655?") before matching
+            msg_cleaned = re.sub(r'([A-Za-z0-9])[?!.,]+(?=\s|$)', r'\1', user_message)
+            number_match = re.search(r'\b([A-Za-z0-9]{4,20})\b', msg_cleaned, re.IGNORECASE)
             if number_match:
-                order_id = number_match.group(1)
+                order_id = number_match.group(1).upper()
+                # StatusWeb only accepts purely numeric codes of ≥8 digits.
+                # Shorter or alphanumeric codes are order/reference numbers — not yet
+                # supported by the carrier API (Shopify integration planned).
+                is_statusweb = order_id.isdigit() and len(order_id) >= 8
                 _clear_tracking_state()  # clean up before API call
 
-                client = get_shipping_client()
-                result = client.get_shipment_status(order_id)
+                if is_statusweb:
+                    client = get_shipping_client()
+                    result = client.get_shipment_status(order_id)
 
-                if result["success"]:
-                    response_text = format_shipping_response(result, order_id)
-                elif result["status"] == "not_found":
+                    if result["success"]:
+                        response_text = format_shipping_response(result, order_id)
+                    elif result["status"] == "not_found":
+                        if user_lang == 'en':
+                            response_text = (
+                                f"❌ Shipment **#{order_id}** was not found. "
+                                "Please check the shipment number and try again."
+                            )
+                        else:
+                            response_text = (
+                                f"❌ Zendingnummer **#{order_id}** is niet gevonden. "
+                                "Controleer het zendingnummer en probeer het opnieuw."
+                            )
+                        _reset_to_awaiting_order_number()
+                    elif result["status"] == "no_status":
+                        if user_lang == 'en':
+                            response_text = (
+                                f"📦 Your shipment **#{order_id}** is registered but "
+                                "no status updates are available yet."
+                            )
+                        else:
+                            response_text = (
+                                f"📦 Je zending **#{order_id}** is aangemeld maar "
+                                "er zijn nog geen statusupdates beschikbaar."
+                            )
+                    else:  # API error
+                        if user_lang == 'en':
+                            response_text = (
+                                "I'm unable to retrieve your shipment status right now. "
+                                "Please try again later or contact our customer service."
+                            )
+                        else:
+                            response_text = (
+                                "Het is momenteel niet mogelijk om je zendingstatus op te halen. "
+                                "Probeer het later opnieuw of neem contact op met onze klantenservice."
+                            )
+                else:
+                    # Alphanumeric or short numeric → order/reference number, not a StatusWeb code
                     if user_lang == 'en':
                         response_text = (
-                            f"❌ Shipment **#{order_id}** was not found. "
-                            "Please check the shipment number and try again."
+                            f"I've received your order number (**{order_id}**). "
+                            "Unfortunately, I can't search directly by order number yet. "
+                            "You'll find your Track & Trace link in the shipping confirmation email. "
+                            "Didn't receive it? Feel free to contact us at "
+                            "klantenservice@groundcovergroup.nl or **0342 – 784 000**."
                         )
                     else:
                         response_text = (
-                            f"❌ Zendingnummer **#{order_id}** is niet gevonden. "
-                            "Controleer het zendingnummer en probeer het opnieuw."
-                        )
-                    _reset_to_awaiting_order_number()
-                elif result["status"] == "no_status":
-                    if user_lang == 'en':
-                        response_text = (
-                            f"📦 Your shipment **#{order_id}** is registered but "
-                            "no status updates are available yet."
-                        )
-                    else:
-                        response_text = (
-                            f"📦 Je zending **#{order_id}** is aangemeld maar "
-                            "er zijn nog geen statusupdates beschikbaar."
-                        )
-                else:  # API error
-                    if user_lang == 'en':
-                        response_text = (
-                            "I'm unable to retrieve your shipment status right now. "
-                            "Please try again later or contact our customer service."
-                        )
-                    else:
-                        response_text = (
-                            "Het is momenteel niet mogelijk om je zendingstatus op te halen. "
-                            "Probeer het later opnieuw of neem contact op met onze klantenservice."
+                            f"Je bestelnummer (**{order_id}**) heb ik ontvangen. "
+                            "Helaas kan ik op dit moment nog niet rechtstreeks op bestelnummer zoeken. "
+                            "Je vindt je Track & Trace-link in de verzendbevestigingsmail. "
+                            "Heb je die niet ontvangen? Dan helpen we je graag via "
+                            "klantenservice@groundcovergroup.nl of **0342 – 784 000**."
                         )
             else:
                 # Check if user is expressing they don't have the shipment number
@@ -1331,17 +1412,17 @@ def _handle_chat(request_id: str) -> Response:
                             "met onze klantenservice — zij kunnen je verder helpen."
                         )
                 else:
-                    # No 6+ digit number found in message — re-prompt once more
+                    # No valid number found in message — re-prompt once more
                     if user_lang == 'en':
                         response_text = (
                             "I didn't find a shipment number in your message. "
-                            "Please enter your **shipment number** (digits only, e.g. **1234567890**). "
+                            "Please enter your **shipment number** (e.g. **400000001**). "
                             "If you don't have it, just let me know."
                         )
                     else:
                         response_text = (
                             "Ik zie geen zendingnummer in je bericht. "
-                            "Vul je **zendingnummer** in (alleen cijfers, bijv. **1234567890**). "
+                            "Vul je **zendingnummer** in (bijv. **400000001**). "
                             "Als je die niet hebt, laat het me weten."
                         )
             _log_chat_message(session_id, request_id, user_message, response_text)
@@ -1373,9 +1454,15 @@ def _handle_chat(request_id: str) -> Response:
         return jsonify({"response": response_text, "request_id": request_id})
 
     # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
-    # Skip WISMO for pre-purchase / hypothetical questions — let RAG answer instead
-    if not PRE_PURCHASE_RE.search(user_message) and (
-        TRACKING_INTENT_RE.search(user_message) or HAS_SHIPMENT_NUMBER_RE.search(user_message)
+    # Skip WISMO for pre-purchase / hypothetical questions — let RAG answer instead.
+    # Also skip when the message is about returns, refunds, or complaints — those need
+    # customer service, not a shipment number lookup.
+    if (
+        not PRE_PURCHASE_RE.search(user_message)
+        and not RETURN_PAYMENT_RE.search(user_message)
+        and (
+            TRACKING_INTENT_RE.search(user_message) or HAS_SHIPMENT_NUMBER_RE.search(user_message)
+        )
     ):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
@@ -1386,13 +1473,13 @@ def _handle_chat(request_id: str) -> Response:
         if detected_lang == 'en':
             response_text = (
                 "I can look that up! Please enter your **shipment number** "
-                "(digits only, e.g. **1234567890**). "
+                "(e.g. **400000001**). "
                 "You can find it in the shipping confirmation email."
             )
         else:
             response_text = (
                 "Dat kan ik voor je opzoeken! Geef je **zendingnummer** door "
-                "(alleen cijfers, bijv. **1234567890**). "
+                "(bijv. **400000001**). "
                 "Je vindt dit in de verzendbevestigingsmail."
             )
         _log_chat_message(session_id, request_id, user_message, response_text)

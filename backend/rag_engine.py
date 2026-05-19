@@ -1102,6 +1102,16 @@ class RagEngine:
             logger.error("Error detecting ticket intent: %s", e)
             return 'giving_name'
 
+    # Common English words used as a fast heuristic before calling the LLM
+    _ENGLISH_WORDS = frozenset({
+        'the', 'is', 'are', 'where', 'my', 'your', 'what', 'how', 'do', 'does',
+        'delivery', 'order', 'package', 'when', 'will', 'can', 'have', 'has',
+        'this', 'that', 'with', 'for', 'not', 'we', 'you', 'they', 'it', 'be',
+        'been', 'time', 'day', 'days', 'working', 'help', 'please', 'want',
+        'need', 'ship', 'shipped', 'tracking', 'receive', 'received', 'return',
+        'refund', 'deliver', 'delivered', 'contact', 'send', 'sent', 'pay', 'paid',
+    })
+
     def detect_language(self, text: str) -> str:
         """Detect if text is Dutch or English using LLM.
 
@@ -1117,6 +1127,12 @@ class RagEngine:
         # Short texts might be ambiguous, default to Dutch for this Dutch company
         if len(text.strip()) < 5:
             return 'nl'
+
+        # Fast heuristic: 3+ known English words → skip LLM call and return 'en'
+        words = re.findall(r'\b[a-zA-Z]+\b', text.lower())
+        if sum(1 for w in words if w in self._ENGLISH_WORDS) >= 3:
+            logger.debug("Heuristic detected English for: %s", text[:50])
+            return 'en'
 
         try:
             response = self.openai_client.chat.completions.create(

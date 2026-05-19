@@ -33,6 +33,9 @@ logs/
 # Sessions (contains user data)
 sessions/
 
+# Training data exports (contain customer PII: names, order numbers)
+portal/trainingdata/
+
 # ChromaDB (large, can be regenerated)
 chroma_db/
 
