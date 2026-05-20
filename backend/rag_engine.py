@@ -5,6 +5,7 @@ from __future__ import annotations  # MUST be first
 import glob
 import logging
 import os
+import re
 import time
 import tiktoken
 from typing import Any, Optional
