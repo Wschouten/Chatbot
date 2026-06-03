@@ -772,6 +772,12 @@ class RagEngine:
                     "explain that GroundCoverGroup does not offer additional discounts on our products. "
                     "This is because GroundCoverGroup already works with very competitive prices.\n\n"
 
+                    "PRODUCT PAGE URLS:\n"
+                    "- If the CONTEXT contains a line '## Link: <url>', share that URL when the customer asks about a price, more product information, or wants to order.\n"
+                    "- Format: 'View the product here: <url>'\n"
+                    "- Only share the URL if it appears in the CONTEXT — never invent URLs.\n"
+                    "- If no URL is in the CONTEXT, refer to the webshop: https://www.boomschors.nl\n\n"
+
                     "OTHER BEHAVIORAL RULES:\n"
                     "- For greetings: respond warmly and ask how you can help\n"
                     f"- You have access to information about {brand.product_line} products\n"
@@ -869,6 +875,12 @@ class RagEngine:
                     "- Als een klant vraagt of er extra korting mogelijk is bij het afnemen van grote hoeveelheden: "
                     "leg uit dat de GroundCoverGroup geen extra korting geeft op onze producten. "
                     "Dit komt omdat de GroundCoverGroup al erg scherp geprijsd is.\n\n"
+
+                    "PRODUCTPAGINA URLS:\n"
+                    "- Als de CONTEXT een regel bevat met '## Link: <url>', geef die URL dan mee wanneer de klant vraagt naar de prijs, meer productinformatie of wil bestellen.\n"
+                    "- Formaat: 'Bekijk het product hier: <url>'\n"
+                    "- Geef een URL alleen als deze letterlijk in de CONTEXT staat — verzin nooit URLs.\n"
+                    "- Als er geen URL in de CONTEXT staat, verwijs dan naar de webshop: https://www.boomschors.nl\n\n"
 
                     "OVERIGE GEDRAGSREGELS:\n"
                     "- Bij begroetingen: reageer vriendelijk en vraag hoe je kunt helpen\n"
