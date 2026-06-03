@@ -49,8 +49,8 @@
     const styles = `
         #gc-chatbot-container {
             --gc-primary: ${CONFIG.primaryColor};
-            --gc-secondary: #F1F8F1;
-            --gc-text: #333333;
+            --gc-cream: #f5f0dc;
+            --gc-text: #2d2d2d;
             --gc-white: #FFFFFF;
             --gc-gray: #888888;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -92,17 +92,17 @@
             ${CONFIG.position.includes('left') ? 'left: 20px;' : 'right: 20px;'}
             bottom: 90px;
             width: 380px;
-            height: 500px;
+            height: 520px;
             max-height: calc(100vh - 120px);
             max-width: calc(100vw - 40px);
-            background-color: var(--gc-white);
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            background-color: var(--gc-cream);
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.18);
             display: flex;
             flex-direction: column;
             overflow: hidden;
             z-index: 2147483647;
-            border: 1px solid #e0e0e0;
+            border: none;
             opacity: 0;
             pointer-events: none;
             transform: translateY(20px);
@@ -114,32 +114,33 @@
             transform: translateY(0);
         }
         .gc-chat-header {
-            background-color: var(--gc-primary);
-            color: var(--gc-white);
-            padding: 14px 20px;
+            background-color: var(--gc-cream);
+            color: var(--gc-text);
+            padding: 16px 20px 14px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-shrink: 0;
+            border-bottom: 1px solid rgba(0,0,0,0.08);
         }
         .gc-header-info {
             display: flex;
             align-items: center;
             gap: 8px;
             font-weight: 600;
-            font-size: 14px;
+            font-size: 15px;
+            color: var(--gc-text);
         }
         .gc-status-dot {
             width: 8px;
             height: 8px;
             background-color: #4CAF50;
             border-radius: 50%;
-            border: 1px solid rgba(255,255,255,0.5);
         }
         .gc-close-btn {
             background: none;
             border: none;
-            color: rgba(255,255,255,0.8);
+            color: #999;
             font-size: 22px;
             cursor: pointer;
             padding: 0;
@@ -147,55 +148,60 @@
             transition: color 0.2s;
         }
         .gc-close-btn:hover {
-            color: #ffffff;
+            color: var(--gc-text);
         }
         .gc-chat-body {
             flex: 1;
             padding: 16px;
             overflow-y: auto;
-            background-color: var(--gc-white);
+            background-color: var(--gc-cream);
             display: flex;
             flex-direction: column;
             gap: 10px;
         }
         .gc-chat-body::-webkit-scrollbar { width: 6px; }
-        .gc-chat-body::-webkit-scrollbar-track { background: #f1f1f1; }
-        .gc-chat-body::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        .gc-chat-body::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); border-radius: 3px; }
+        .gc-chat-body::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 3px; }
         .gc-message {
-            padding: 10px 14px;
+            padding: 12px 16px;
             border-radius: 12px;
             max-width: 85%;
-            line-height: 1.5;
+            line-height: 1.6;
             word-wrap: break-word;
         }
         .gc-bot-message {
-            background-color: #f2f2f2;
+            background-color: var(--gc-white);
             color: var(--gc-text);
             align-self: flex-start;
-            border-bottom-left-radius: 2px;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
         }
         .gc-user-message {
             background-color: var(--gc-primary);
             color: var(--gc-white);
             align-self: flex-end;
-            border-bottom-right-radius: 2px;
+            border-radius: 12px;
+            border-bottom-right-radius: 4px;
         }
         .gc-input-area {
-            padding: 16px;
-            border-top: 1px solid #eee;
+            padding: 12px 16px 14px;
+            border-top: 1px solid rgba(0,0,0,0.08);
             display: flex;
-            gap: 10px;
+            gap: 8px;
             background-color: var(--gc-white);
             flex-shrink: 0;
+            align-items: center;
         }
         .gc-input-area input {
             flex: 1;
             padding: 10px 14px;
-            border: 1px solid #ddd;
-            border-radius: 24px;
+            border: 1px solid #e8e0cc;
+            border-radius: 8px;
             outline: none;
             font-family: inherit;
             font-size: 14px;
+            background-color: var(--gc-white);
+            color: var(--gc-text);
         }
         .gc-input-area input:focus {
             border-color: var(--gc-primary);
@@ -204,27 +210,28 @@
             background-color: var(--gc-primary);
             color: var(--gc-white);
             border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            border-radius: 8px;
+            width: 38px;
+            height: 38px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
+            transition: opacity 0.2s;
         }
         .gc-send-btn:hover {
-            opacity: 0.9;
+            opacity: 0.85;
         }
         .gc-typing {
             display: flex;
             gap: 4px;
             padding: 12px 14px;
-            background-color: #f2f2f2;
+            background-color: var(--gc-white);
             border-radius: 12px;
             align-self: flex-start;
-            border-bottom-left-radius: 2px;
             width: fit-content;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
         }
         .gc-typing span {
             width: 6px;
@@ -245,7 +252,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(255, 255, 255, 0.98);
+            background-color: rgba(245, 240, 220, 0.98);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -285,7 +292,7 @@
         }
         .gc-consent-btn {
             padding: 12px 20px;
-            border-radius: 24px;
+            border-radius: 8px;
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
@@ -298,7 +305,7 @@
         .gc-consent-decline {
             background-color: transparent;
             color: var(--gc-gray);
-            border: 1px solid #ddd;
+            border: 1px solid #ccc;
         }
     `;
 
@@ -410,10 +417,10 @@
         const chatHeader = widget.querySelector('.gc-chat-header');
         const headerText = widget.querySelector('.gc-header-info span:last-child');
 
-        // Force send button to exact circle — override Shopify theme button styles
+        // Force send button to exact size — override Shopify theme button styles
         [
-            ['width',         '40px'],
-            ['height',        '40px'],
+            ['width',         '38px'],
+            ['height',        '38px'],
             ['min-height',    'unset'],
             ['max-height',    'unset'],
             ['min-width',     'unset'],
@@ -424,7 +431,7 @@
             ['padding-bottom','0'],
             ['padding-left',  '0'],
             ['box-sizing',    'border-box'],
-            ['border-radius', '50%'],
+            ['border-radius', '8px'],
             ['line-height',   '1'],
             ['flex-shrink',   '0'],
         ].forEach(([prop, val]) => sendBtn.style.setProperty(prop, val, 'important'));
@@ -432,12 +439,14 @@
 
         // Fix header container flex layout (Shopify overrides justify-content/flex-direction)
         [
-            ['display',          'flex'],
-            ['flex-direction',   'row'],
-            ['justify-content',  'space-between'],
-            ['align-items',      'center'],
-            ['flex-wrap',        'nowrap'],
-            ['gap',              '0'],
+            ['display',           'flex'],
+            ['flex-direction',    'row'],
+            ['justify-content',   'space-between'],
+            ['align-items',       'center'],
+            ['flex-wrap',         'nowrap'],
+            ['gap',               '0'],
+            ['background-color',  '#f5f0dc'],
+            ['color',             '#2d2d2d'],
         ].forEach(([prop, val]) => chatHeader.style.setProperty(prop, val, 'important'));
 
         // Fix header-info row layout
@@ -447,9 +456,10 @@
             ['align-items',    'center'],
             ['flex-wrap',      'nowrap'],
             ['gap',            '8px'],
-            ['font-size',      '14px'],
+            ['font-size',      '15px'],
             ['font-weight',    '600'],
             ['line-height',    '1.2'],
+            ['color',          '#2d2d2d'],
         ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
 
         // Prevent header text from wrapping to a second line
@@ -457,7 +467,8 @@
             ['white-space',  'nowrap'],
             ['overflow',     'hidden'],
             ['text-overflow','ellipsis'],
-            ['font-size',    '14px'],
+            ['font-size',    '15px'],
+            ['color',        '#2d2d2d'],
         ].forEach(([prop, val]) => headerText.style.setProperty(prop, val, 'important'));
 
         // Fix close button — push to right corner, remove Shopify sizing
@@ -476,7 +487,7 @@
             ['flex-shrink',   '0'],
             ['background',    'none'],
             ['border',        'none'],
-            ['color',         'rgba(255,255,255,0.8)'],
+            ['color',         '#999999'],
         ].forEach(([prop, val]) => closeBtn.style.setProperty(prop, val, 'important'));
 
         let isOpen = false;
