@@ -17,7 +17,7 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from rag_engine import RagEngine, get_openai_health
-from shipping_api import get_shipment_status, get_shipping_client
+from shipping_api import get_shipping_client
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
@@ -29,6 +29,19 @@ from pathlib import Path
 
 # Load environment variables
 load_dotenv()
+
+
+def _mocks_allowed() -> bool:
+    """Whether fabricated mock responses may stand in for missing integrations.
+
+    Only true in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
+    In production this is false, so a missing API key surfaces an honest error to
+    the customer instead of a fabricated "success" (fake tracking status, fake
+    stock, fake escalation ticket).
+    """
+    truthy = ('1', 'true', 'yes')
+    return (os.getenv('USE_MOCKS', '').strip().lower() in truthy
+            or os.getenv('FLASK_DEBUG', '').strip().lower() in truthy)
 
 # =============================================================================
 # SECURITY: ADMIN_API_KEY Startup Validation
@@ -214,7 +227,16 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 ADMIN_SESSION_COOKIE = "admin_session"
 ADMIN_SESSION_MAX_AGE = 4 * 60 * 60  # 4 hours
 
-_session_secret = os.environ.get("SESSION_SECRET") or f"admin-session::{ADMIN_API_KEY or ''}"
+if os.environ.get("SESSION_SECRET"):
+    _session_secret = os.environ["SESSION_SECRET"]
+elif ADMIN_API_KEY:
+    _session_secret = f"admin-session::{ADMIN_API_KEY}"
+else:
+    # Debug-only path: no ADMIN_API_KEY set (production refuses to start without one).
+    # Use a random per-process secret instead of the well-known empty-key fallback
+    # so session cookies can't be forged in dev. Cookies won't survive a restart.
+    _session_secret = secrets.token_urlsafe(32)
+    logging.warning("No ADMIN_API_KEY/SESSION_SECRET set - using a random per-process session secret (dev only).")
 _session_serializer = URLSafeTimedSerializer(_session_secret, salt="admin-session-v1")
 
 
@@ -310,7 +332,8 @@ TRACKING_INTENT_RE = re.compile(
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
     re.IGNORECASE
 )
-POSTCODE_RE = re.compile(r'\b(\d{4}\s?[A-Za-z]{2})\b')
+# Accepts Dutch postcodes (1234 AB) and Belgian postcodes (4 digits, 1000-9999).
+POSTCODE_RE = re.compile(r'\b(\d{4}\s?[A-Za-z]{2}|[1-9]\d{3})\b')
 CLOSING_RE = re.compile(
     r'^\s*(?:dankjewel|dankje|bedankt|dank u wel|dank je wel|prima|top|goed zo|'
     r'ok(?:é|e)?|helemaal goed|dat hoeft niet|laat maar|niet nodig|'
@@ -872,7 +895,7 @@ def _log_chat_message(session_id: str, request_id: str, user_message: str, respo
             os.makedirs(log_dir)
 
         log_entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "request_id": request_id,
             "user": _redact_pii_for_log(user_message),
             "bot": _redact_pii_for_log(response_text)
@@ -913,8 +936,11 @@ def chat() -> Response:
 def _handle_chat(request_id: str) -> Response:
     """Inner chat handler (extracted so the outer function can catch all errors)."""
     data = request.json
-    user_message: str = data.get('message', '') if data else ''
-    session_id: str = data.get('session_id', 'unknown_session') if data else 'unknown_session'
+    user_message: str = (data.get('message') or '') if data else ''
+    # Use `or` (not a default arg): the widget can POST session_id: null before its
+    # async fetchSession() resolves; data.get('session_id', ...) would return None
+    # (key present) and crash sanitize_session_id(None) with a TypeError.
+    session_id: str = (data.get('session_id') or 'unknown_session') if data else 'unknown_session'
 
     logger.info("[%s] Chat request from session %s", request_id, sanitize_session_id(session_id)[:20])
 
@@ -1073,33 +1099,6 @@ def _handle_chat(request_id: str) -> Response:
         except (ValueError, TypeError):
             return True
 
-    def _call_zapier_wismo(order_number: str, email: str) -> dict:
-        """POST order_number + email to Zapier WISMO webhook.
-        Returns: {"outcome": "ok"} | {"outcome": "not_found"} | {"outcome": "error"}
-        """
-        webhook_url = os.getenv('ZAPIER_WEBHOOK_URL_WISMO', '').strip()
-        if not webhook_url:
-            logger.warning("ZAPIER_WEBHOOK_URL_WISMO not configured")
-            return {"outcome": "error"}
-        payload = {"order_number": order_number, "email": email}
-        try:
-            resp = requests.post(webhook_url, json=payload, timeout=15)
-            resp.raise_for_status()
-            data = resp.json()
-            status = (data.get("status") or data.get("Status") or "").lower().strip()
-            if status in ("verified", "success"):
-                return {"outcome": "ok"}
-            if status in ("not_found", "error", "notfound", "not found"):
-                return {"outcome": "not_found"}
-            logger.warning("Zapier WISMO: unexpected status %r", status)
-            return {"outcome": "error"}
-        except requests.exceptions.Timeout:
-            logger.error("Zapier WISMO timeout for order %s", order_number)
-            return {"outcome": "error"}
-        except requests.exceptions.RequestException as exc:
-            logger.error("Zapier WISMO request failed: %s", exc)
-            return {"outcome": "error"}
-
     def _clear_tracking_state() -> None:
         for key in ('awaiting_order_number', 'pending_order_id', 'tracking_timestamp'):
             state_data.pop(key, None)
@@ -1143,11 +1142,14 @@ def _handle_chat(request_id: str) -> Response:
         max_results = int(os.getenv("SHOPIFY_MAX_RESULTS", "3"))
 
         if not token:
-            logger.warning("SHOPIFY_STOREFRONT_TOKEN not set — returning mock stock response")
-            return {"outcome": "found", "products": [
-                {"title": "Mock Product", "available": True, "inventory": 5, "url": "#",
-                 "price_min": "29.95", "price_max": "29.95", "currency": "EUR"}
-            ]}
+            if _mocks_allowed():
+                logger.warning("SHOPIFY_STOREFRONT_TOKEN not set — returning mock stock response (dev)")
+                return {"outcome": "found", "products": [
+                    {"title": "Mock Product", "available": True, "inventory": 5, "url": "#",
+                     "price_min": "29.95", "price_max": "29.95", "currency": "EUR"}
+                ]}
+            logger.error("SHOPIFY_STOREFRONT_TOKEN not set — cannot check stock, returning error")
+            return {"outcome": "error", "products": []}
 
         # Sanitize query: strip any non-alphanumeric/space/hyphen chars, then cap length.
         # This prevents GraphQL/Shopify-query injection via quotes, backslashes, parens,
@@ -1291,16 +1293,14 @@ def _handle_chat(request_id: str) -> Response:
                 save_session_state(session_id, state_data)
                 if user_lang == 'en':
                     response_text = (
-                        "✅ Thank you, I found your order! "
-                        "To retrieve the exact delivery time from our carrier, "
+                        "Thank you! To retrieve the exact delivery time from our carrier, "
                         "I need your **shipment tracking number** (e.g. **400000001**). "
                         "You should have received this separately by email. "
                         "What is your **shipment number**?"
                     )
                 else:
                     response_text = (
-                        "✅ Bedankt, ik heb je bestelling gevonden! "
-                        "Om de exacte levertijd bij de vervoerder op te halen, "
+                        "Bedankt! Om de exacte levertijd bij de vervoerder op te halen, "
                         "heb ik je **zendingnummer** nodig (bijv. **400000001**). "
                         "Dit heb je apart per e-mail ontvangen. "
                         "Wat is je **zendingnummer**?"
@@ -1309,12 +1309,12 @@ def _handle_chat(request_id: str) -> Response:
                 if user_lang == 'en':
                     response_text = (
                         "That doesn't look like a valid postcode. "
-                        "Please enter a Dutch postcode (e.g. **1234 AB**)."
+                        "Please enter a Dutch (e.g. **1234 AB**) or Belgian (e.g. **1000**) postcode."
                     )
                 else:
                     response_text = (
                         "Dat lijkt geen geldige postcode. "
-                        "Vul een Nederlandse postcode in (bijv. **1234 AB**)."
+                        "Vul een Nederlandse (bijv. **1234 AB**) of Belgische (bijv. **1000**) postcode in."
                     )
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})

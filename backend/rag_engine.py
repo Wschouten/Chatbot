@@ -146,10 +146,17 @@ class RagEngine:
         if not self.openai_client:
             raise RuntimeError("OpenAI client not initialized")
         MAX_EMBEDDING_TOKENS = 8000  # text-embedding-3-small limit is 8191
-        token_count = _count_tokens(text)
-        if token_count > MAX_EMBEDDING_TOKENS:
-            text = text[: MAX_EMBEDDING_TOKENS * 4]
-            logger.warning("Embedding input truncated from %d tokens", token_count)
+        # Slice on real tokens, not characters: a char-based cut (text[:N*4]) can
+        # still exceed the token limit for Dutch, which tokenizes to more
+        # tokens-per-char than English, and then the API call errors out.
+        try:
+            enc = tiktoken.encoding_for_model(self.embedding_model)
+        except KeyError:
+            enc = tiktoken.get_encoding("cl100k_base")
+        tokens = enc.encode(text)
+        if len(tokens) > MAX_EMBEDDING_TOKENS:
+            logger.warning("Embedding input truncated from %d tokens", len(tokens))
+            text = enc.decode(tokens[:MAX_EMBEDDING_TOKENS])
         response = self.openai_client.embeddings.create(
             input=text,
             model=self.embedding_model
@@ -597,12 +604,16 @@ class RagEngine:
                                 "content": "Translate the following English text to Dutch. Return ONLY the translation, nothing else."
                             }, {
                                 "role": "user",
-                                "content": query
+                                # Translate the reformulated + entity-enhanced query, not the
+                                # raw original — otherwise the follow-up reformulation and the
+                                # conversation entities added above are discarded for EN users.
+                                "content": search_query
                             }],
                             temperature=0.1
                         )
-                        search_query = translation.choices[0].message.content.strip()
-                        logger.debug("Translated EN->NL for search: '%s' -> '%s'", query, search_query)
+                        translated = translation.choices[0].message.content.strip()
+                        logger.debug("Translated EN->NL for search: '%s' -> '%s'", search_query, translated)
+                        search_query = translated
                     except Exception as e:
                         logger.warning("Translation failed, using original query: %s", e)
 

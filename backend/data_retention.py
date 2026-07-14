@@ -5,7 +5,7 @@ Automatically cleans up old session and log files based on configurable retentio
 import os
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def run_data_retention_cleanup(
     )
 
     results = {
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "sessions": cleanup_old_files(sessions_dir, sessions_retention_days),
         "logs": cleanup_old_files(logs_dir, logs_retention_days)
     }

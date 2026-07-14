@@ -1,13 +1,29 @@
 """Shipping status API module - Van Den Heuvel / StatusWeb SOAP Integration."""
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 
 # StatusWeb SOAP WSDL endpoint
 STATUSWEB_WSDL = 'https://www.statusweb.nl/StatuswebAPIv4/Service.wso?WSDL'
+
+# Network timeout (seconds) for the SOAP transport so a hung StatusWeb call
+# can't permanently pin a gunicorn worker thread.
+SOAP_TIMEOUT = 15
+
+
+def _mocks_allowed() -> bool:
+    """Whether a mock shipping response may stand in for a missing API key.
+
+    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
+    In production a missing SHIPPING_API_KEY yields an honest error instead of a
+    fabricated "onderweg" status shown to a real customer.
+    """
+    truthy = ('1', 'true', 'yes')
+    return (os.getenv('USE_MOCKS', '').strip().lower() in truthy
+            or os.getenv('FLASK_DEBUG', '').strip().lower() in truthy)
 
 # StatusWeb error codes
 SW_OK = 1
@@ -26,7 +42,9 @@ class ShippingAPIClient:
     def __init__(self):
         self.api_key = os.getenv('SHIPPING_API_KEY', '')
         self.api_password = os.getenv('SHIPPING_API_PASSWORD', '')
-        self.use_mock = not self.api_key  # Auto-enable mock if no key
+        # Mock only when a key is missing AND mocks are allowed (dev/opt-in).
+        # In production a missing key means real lookups fail with an honest error.
+        self.use_mock = not self.api_key and _mocks_allowed()
 
         # Session management (cached for performance)
         self._session_id: Optional[str] = None
@@ -34,7 +52,9 @@ class ShippingAPIClient:
         self._soap_client = None
 
         if self.use_mock:
-            logger.warning("SHIPPING_API_KEY not set - using mock responses")
+            logger.warning("SHIPPING_API_KEY not set - using mock responses (dev)")
+        elif not self.api_key:
+            logger.error("SHIPPING_API_KEY not set - shipment lookups will fail (no mock in production)")
         else:
             logger.info("StatusWeb shipping API configured (Van Den Heuvel)")
 
@@ -43,7 +63,9 @@ class ShippingAPIClient:
         if self._soap_client is None:
             try:
                 from zeep import Client as ZeepClient
-                self._soap_client = ZeepClient(wsdl=STATUSWEB_WSDL)
+                from zeep.transports import Transport
+                transport = Transport(timeout=SOAP_TIMEOUT, operation_timeout=SOAP_TIMEOUT)
+                self._soap_client = ZeepClient(wsdl=STATUSWEB_WSDL, transport=transport)
                 logger.info("StatusWeb SOAP client initialized (WSDL loaded)")
             except Exception as e:
                 logger.error("Failed to initialize SOAP client: %s", e)
@@ -78,7 +100,7 @@ class ShippingAPIClient:
         Sessions are valid for 2 hours. We cache with a 1h55m margin
         to avoid using expired tokens.
         """
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         # Return cached session if still valid
         if (self._session_id and self._session_expires
@@ -137,9 +159,10 @@ class ShippingAPIClient:
             session_id = self._get_session_id()
             client = self._get_soap_client()
 
-            # Convert to float (StatusWeb expects numeric Vrachtnummer)
+            # Convert to int (StatusWeb expects a numeric Vrachtnummer).
+            # int (not float) preserves precision for the long 15-20 digit codes.
             try:
-                vrachtnummer = float(tracking_code)
+                vrachtnummer = int(tracking_code)
             except (ValueError, TypeError):
                 return {
                     "success": False,

@@ -15,6 +15,18 @@ logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT = (5, 30)
 
 
+def _mocks_allowed() -> bool:
+    """Whether a mock ticket may stand in for missing Zendesk credentials.
+
+    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
+    In production missing creds return a failure so the bot tells the customer
+    honestly instead of promising a ticket that was never created.
+    """
+    truthy = ('1', 'true', 'yes')
+    return (os.environ.get('USE_MOCKS', '').strip().lower() in truthy
+            or os.environ.get('FLASK_DEBUG', '').strip().lower() in truthy)
+
+
 class ZendeskClient:
     """Client for interacting with Zendesk API."""
 
@@ -52,10 +64,13 @@ class ZendeskClient:
             Zendesk API response dict or None on failure
         """
         if not self.is_configured():
-            logger.info("ZENDESK MOCK: Ticket creation requested but credentials missing.")
-            logger.info("  > Requester: %s (%s)", name, requester_email)
-            logger.info("  > Question: %s", question)
-            return {"ticket": {"id": "MOCK-123", "subject": "Mock Ticket"}}
+            if _mocks_allowed():
+                logger.info("ZENDESK MOCK: Ticket creation requested but credentials missing (dev).")
+                logger.info("  > Requester: %s (%s)", name, requester_email)
+                logger.info("  > Question: %s", question)
+                return {"ticket": {"id": "MOCK-123", "subject": "Mock Ticket"}}
+            logger.error("Zendesk credentials missing - ticket NOT created for: %s", name)
+            return None
 
         url = f"https://{self.subdomain}.zendesk.com/api/v2/tickets.json"
 

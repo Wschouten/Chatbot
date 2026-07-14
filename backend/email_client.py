@@ -18,6 +18,18 @@ MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 HTTP_TIMEOUT = 15
 
 
+def _mocks_allowed() -> bool:
+    """Whether a mock 'sent' result may stand in for missing MailerSend creds.
+
+    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
+    In production missing creds return a failure so the bot tells the customer
+    honestly instead of silently dropping the lead.
+    """
+    truthy = ('1', 'true', 'yes')
+    return (os.environ.get('USE_MOCKS', '').strip().lower() in truthy
+            or os.environ.get('FLASK_DEBUG', '').strip().lower() in truthy)
+
+
 class EmailClient:
     """Client for sending escalation emails via MailerSend API."""
 
@@ -57,10 +69,13 @@ class EmailClient:
         subject = f"Chatbot Query from {name}"
 
         if not self.is_configured():
-            logger.info("EMAIL MOCK: Email send requested but credentials missing.")
-            logger.info("  > Requester: %s (%s)", name, requester_email)
-            logger.info("  > Question: %s", question)
-            return {"ticket": {"id": "MOCK-EMAIL-123", "subject": subject}}
+            if _mocks_allowed():
+                logger.info("EMAIL MOCK: Email send requested but credentials missing (dev).")
+                logger.info("  > Requester: %s (%s)", name, requester_email)
+                logger.info("  > Question: %s", question)
+                return {"ticket": {"id": "MOCK-EMAIL-123", "subject": subject}}
+            logger.error("MailerSend credentials missing - escalation email NOT sent for: %s", name)
+            return None
 
         # Build email body with full conversation history
         brand = get_brand_config()
@@ -119,13 +134,19 @@ class EmailClient:
         requester_email: str,
         question: str,
         session_history: Optional[list[dict[str, str]]] = None
-    ) -> dict[str, Any]:
+    ) -> Optional[dict[str, Any]]:
         """Queue an escalation email to be sent in a background thread.
 
-        Returns immediately with a success result. The actual MailerSend API call
-        happens in a daemon thread so it doesn't block the HTTP response.
+        Returns a truthy result on queue, or None when credentials are missing in
+        production (so the caller can tell the customer honestly instead of
+        promising a follow-up that will never be sent). The actual MailerSend API
+        call happens in a daemon thread so it doesn't block the HTTP response.
         Any unexpected errors in the thread are logged instead of dying silently.
         """
+        if not self.is_configured() and not _mocks_allowed():
+            logger.error("MailerSend credentials missing - escalation email NOT queued for: %s", name)
+            return None
+
         def _send_with_logging() -> None:
             try:
                 self.send_email(name, requester_email, question, session_history)

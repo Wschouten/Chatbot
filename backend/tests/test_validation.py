@@ -92,7 +92,7 @@ class TestShippingApi:
         import shipping_api as _sa
         from shipping_api import get_shipment_status
 
-        with patch.dict(os.environ, {'SHIPPING_API_KEY': ''}):
+        with patch.dict(os.environ, {'SHIPPING_API_KEY': '', 'USE_MOCKS': 'true'}):
             _sa._shipping_client = None
             result = get_shipment_status("12345")
             _sa._shipping_client = None
