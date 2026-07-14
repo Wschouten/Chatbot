@@ -27,11 +27,8 @@ def _mocks_allowed() -> bool:
 
 # StatusWeb error codes
 SW_OK = 1
-SW_UNKNOWN_API_KEY = -99
 SW_UNKNOWN_TRANSPORT_NUMBER = -150
 SW_NO_STATUSES_FOUND = -200
-SW_NO_ETA = -320
-SW_NO_STATUS_URL = -500
 SW_SESSION_EXPIRED = -96
 SW_INVALID_SESSION = -98
 
@@ -71,27 +68,6 @@ class ShippingAPIClient:
                 logger.error("Failed to initialize SOAP client: %s", e)
                 raise
         return self._soap_client
-
-    def close(self) -> None:
-        """Close the zeep client and release its internal HTTP session."""
-        try:
-            if getattr(self, "_soap_client", None):
-                transport = getattr(self._soap_client, "transport", None)
-                if transport and hasattr(transport, "session"):
-                    transport.session.close()
-                self._soap_client = None
-        except Exception:
-            logger.exception("Error closing SOAP client")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-        return False
-
-    def __del__(self):
-        self.close()
 
     def _get_session_id(self) -> str:
         """
@@ -344,31 +320,3 @@ def get_shipping_client() -> ShippingAPIClient:
     if _shipping_client is None:
         _shipping_client = ShippingAPIClient()
     return _shipping_client
-
-
-# Backward compatibility function
-def get_shipment_status(order_id: str) -> str:
-    """Legacy function - returns formatted string for simple cases."""
-    client = get_shipping_client()
-    result = client.get_shipment_status(order_id)
-
-    if result["success"]:
-        status = result["status"]
-        details = result.get("details", {})
-
-        if status == "in_transit":
-            desc = details.get("status_description", "Onderweg")
-            return f"✅ Je zending #{order_id} is onderweg! Status: {desc}."
-        elif status == "delivered":
-            date = details.get("date", "")
-            return f"✅ Je zending #{order_id} is afgeleverd op {date}!"
-        elif status == "at_depot":
-            desc = details.get("status_description", "Bij depot")
-            return f"📦 Je zending #{order_id}: {desc}"
-        else:
-            return f"📦 Status zending #{order_id}: {status}"
-    else:
-        error = result.get("error", "Onbekende fout")
-        if result["status"] == "not_found":
-            return f"❌ Zending #{order_id} niet gevonden. Controleer het zendingnummer."
-        return f"❌ Kon status niet ophalen: {error}"

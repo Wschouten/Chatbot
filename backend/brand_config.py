@@ -106,10 +106,3 @@ def get_brand_config() -> BrandConfig:
     if _brand_config is None:
         _brand_config = BrandConfig.from_env()
     return _brand_config
-
-
-def reload_brand_config() -> BrandConfig:
-    """Reload brand configuration from environment (useful for testing)."""
-    global _brand_config
-    _brand_config = BrandConfig.from_env()
-    return _brand_config

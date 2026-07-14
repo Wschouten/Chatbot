@@ -11,3 +11,7 @@ import os
 
 # Enable mock integrations for the test run (no real API keys required).
 os.environ["USE_MOCKS"] = "true"
+
+# Skip import-time KB ingestion (bills the OpenAI API) and the data-retention
+# cleanup (deletes files) when `import app` runs during collection.
+os.environ["TESTING"] = "1"

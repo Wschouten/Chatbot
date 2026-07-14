@@ -33,6 +33,12 @@ logs/
 # Sessions (contains user data)
 sessions/
 
+# Databases — portal.db is recreated at runtime by admin_db.init_db().
+# Never commit it: a baked-in snapshot resets all admin labels/notes/statuses
+# on every Railway deploy (unless a volume is mounted at /app/backend/data).
+*.db
+backend/data/
+
 # Training data exports (contain customer PII: names, order numbers)
 portal/trainingdata/
 

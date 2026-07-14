@@ -464,17 +464,26 @@ if not in_container:
         "Consider running via 'docker-compose up' instead."
     )
 
-logger.info(rag_engine.ingest_documents())
+# Skip expensive/destructive startup work under tests: ingest_documents() bills
+# the OpenAI embeddings API (full KB embed, 12+ min cold) and the retention
+# cleanup DELETES expired session/log files — neither should run during a plain
+# `import app` at test collection. Tests set TESTING=1 (see tests/conftest.py).
+_TESTING = os.getenv('TESTING', '').strip().lower() in ('1', 'true', 'yes')
 
-# =============================================================================
-# GDPR: Data Retention Cleanup (runs on startup)
-# =============================================================================
-run_data_retention_cleanup(
-    sessions_dir="data/sessions",
-    logs_dir="data/logs",
-    sessions_retention_days=int(os.getenv("DATA_RETENTION_SESSIONS_DAYS", "30")),
-    logs_retention_days=int(os.getenv("DATA_RETENTION_LOGS_DAYS", "90"))
-)
+if _TESTING:
+    logger.info("TESTING mode — skipping KB ingestion and data-retention cleanup at import.")
+else:
+    logger.info(rag_engine.ingest_documents())
+
+    # =========================================================================
+    # GDPR: Data Retention Cleanup (runs on startup)
+    # =========================================================================
+    run_data_retention_cleanup(
+        sessions_dir="data/sessions",
+        logs_dir="data/logs",
+        sessions_retention_days=int(os.getenv("DATA_RETENTION_SESSIONS_DAYS", "30")),
+        logs_retention_days=int(os.getenv("DATA_RETENTION_LOGS_DAYS", "90"))
+    )
 
 # =============================================================================
 # Portal DB: Initialize SQLite and register teardown (Feature 30a)

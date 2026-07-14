@@ -88,32 +88,36 @@ class TestShippingApi:
     """Tests for shipping API."""
 
     def test_valid_order_id(self):
-        """Test shipping status with valid order ID (forces mock mode)."""
+        """Mock shipment lookup returns the in-transit mock response (mock mode)."""
         import shipping_api as _sa
-        from shipping_api import get_shipment_status
+        from shipping_api import get_shipping_client
 
         with patch.dict(os.environ, {'SHIPPING_API_KEY': '', 'USE_MOCKS': 'true'}):
             _sa._shipping_client = None
-            result = get_shipment_status("12345")
+            result = get_shipping_client().get_shipment_status("12345")
             _sa._shipping_client = None
-        assert "12345" in result
-        assert "onderweg" in result
+        assert result["success"] is True
+        assert result["status"] == "in_transit"
+        assert result["details"]["tracking_code"] == "12345"
+        assert "onderweg" in result["details"]["status_description"].lower()
 
     def test_empty_order_id(self):
-        """Test shipping status with empty order ID returns invalid-input error."""
+        """Empty tracking code returns the invalid-number error outcome."""
         import shipping_api as _sa
-        from shipping_api import get_shipment_status, ShippingAPIClient
+        from shipping_api import get_shipping_client, ShippingAPIClient
         from unittest.mock import MagicMock
 
         with patch.dict(os.environ, {'SHIPPING_API_KEY': 'dummy-key-for-test'}):
             _sa._shipping_client = None
             # Patch auth and SOAP so no network calls are made;
-            # float("") raises ValueError before any SOAP method is invoked.
+            # int("") raises ValueError before any SOAP method is invoked.
             with patch.object(ShippingAPIClient, '_get_session_id', return_value='dummy-session'), \
                  patch.object(ShippingAPIClient, '_get_soap_client', return_value=MagicMock()):
-                result = get_shipment_status("")
+                result = get_shipping_client().get_shipment_status("")
             _sa._shipping_client = None
-        assert "geldig zendingnummer" in result
+        assert result["success"] is False
+        assert result["status"] == "invalid_number"
+        assert "geldig zendingnummer" in result["error"]
 
 
 class TestZendeskClient:
