@@ -87,3 +87,26 @@ class TestBelgianPostcode:
         assert flask_app.POSTCODE_RE.search("1234AB"), "Dutch postcode without space must match"
         assert flask_app.POSTCODE_RE.search("1000"), "Belgian 4-digit postcode must match"
         assert flask_app.POSTCODE_RE.search("9000"), "Belgian 4-digit postcode must match"
+
+
+class TestStockLookupGating:
+    """The Shopify stock-lookup flow is entered only when it can actually work."""
+
+    def test_disabled_without_token_in_production(self):
+        import app as flask_app
+
+        with patch.dict(os.environ, {**_PROD_ENV, "SHOPIFY_STOREFRONT_TOKEN": ""}):
+            assert flask_app._stock_lookup_enabled() is False, \
+                "No Shopify token + mocks off must skip the stock flow (falls through to RAG)"
+
+    def test_enabled_with_token(self):
+        import app as flask_app
+
+        with patch.dict(os.environ, {**_PROD_ENV, "SHOPIFY_STOREFRONT_TOKEN": "shpat_dummy"}):
+            assert flask_app._stock_lookup_enabled() is True
+
+    def test_enabled_with_mocks(self):
+        import app as flask_app
+
+        with patch.dict(os.environ, {"USE_MOCKS": "true", "SHOPIFY_STOREFRONT_TOKEN": ""}):
+            assert flask_app._stock_lookup_enabled() is True

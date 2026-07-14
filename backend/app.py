@@ -43,6 +43,17 @@ def _mocks_allowed() -> bool:
     return (os.getenv('USE_MOCKS', '').strip().lower() in truthy
             or os.getenv('FLASK_DEBUG', '').strip().lower() in truthy)
 
+
+def _stock_lookup_enabled() -> bool:
+    """Whether the bot should enter the Shopify stock-lookup flow at all.
+
+    Enabled when a Storefront token is configured, or when mocks are allowed
+    (dev/tests). In production WITHOUT a token the flow is skipped entirely so a
+    stock question falls through to RAG instead of dead-ending in "can't check
+    stock right now". Set SHOPIFY_STOREFRONT_TOKEN to switch the feature back on.
+    """
+    return bool(os.getenv('SHOPIFY_STOREFRONT_TOKEN', '').strip()) or _mocks_allowed()
+
 # =============================================================================
 # SECURITY: ADMIN_API_KEY Startup Validation
 # =============================================================================
@@ -1534,8 +1545,12 @@ def _handle_chat(request_id: str) -> Response:
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
-    # STOCK LOOKUP step 1: detect product availability intent inline
-    if not PRE_PURCHASE_RE.search(user_message) and STOCK_INTENT_RE.search(user_message):
+    # STOCK LOOKUP step 1: detect product availability intent inline.
+    # Only enter the flow when Shopify is configured (or mocks are on) — otherwise
+    # the question falls through to RAG instead of dead-ending in "can't check stock".
+    if (not PRE_PURCHASE_RE.search(user_message)
+            and STOCK_INTENT_RE.search(user_message)
+            and _stock_lookup_enabled()):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
 
