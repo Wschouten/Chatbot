@@ -270,53 +270,6 @@ class RagEngine:
             + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
         )
 
-    def _extract_conversation_entities(self, chat_history: list[dict[str, str]]) -> list[str]:
-        """Extract product names and key entities from recent conversation.
-
-        Returns a list of important terms/products that should be considered
-        in the current query context.
-        """
-        if not chat_history or not self.openai_client:
-            return []
-
-        try:
-            # Look at last 4 messages for entity extraction
-            recent = chat_history[-4:]
-            history_text = "\n".join(
-                f"{m['role']}: {m['content'][:500]}"
-                for m in recent
-            )
-
-            response = self.openai_client.chat.completions.create(
-                model=self.chat_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Extract product names, specific items, and key entities from this conversation. "
-                            "Return ONLY a comma-separated list of terms, or 'NONE' if there are no specific entities. "
-                            "Focus on concrete nouns like product names, not general concepts."
-                        )
-                    },
-                    {
-                        "role": "user",
-                        "content": f"Conversation:\n{history_text}\n\nEntities:"
-                    }
-                ],
-                temperature=0.0,
-                max_completion_tokens=50
-            )
-
-            result = response.choices[0].message.content
-            if result and result.strip().upper() != 'NONE':
-                entities = [e.strip() for e in result.split(',') if e.strip()]
-                logger.debug("Extracted conversation entities: %s", entities)
-                return entities
-            return []
-        except Exception as e:
-            logger.warning("Entity extraction failed: %s", e)
-            return []
-
     def _extract_metadata_from_content(self, content: str, filename: str) -> dict[str, str]:
         """Extract metadata from document content.
 
@@ -605,19 +558,13 @@ class RagEngine:
                 # Feature 15: Translate English queries to Dutch for better KB matching
                 search_query = query
 
-                # Feature 25: Reformulate follow-up questions into standalone queries
+                # Feature 25: Reformulate follow-up questions into standalone queries.
+                # The reformulation prompt already preserves product names/entities
+                # (last 6 messages, untruncated), so the separate entity-extraction
+                # LLM call this used to make was redundant — dropped in Fase 5 to save
+                # one OpenAI call per follow-up message.
                 if chat_history:
-                    # Extract entities from conversation for context-aware search
-                    conversation_entities = self._extract_conversation_entities(chat_history)
-
                     search_query = self._reformulate_query(query, chat_history)
-
-                    # If entities were found and not in reformulated query, append them
-                    if conversation_entities:
-                        for entity in conversation_entities:
-                            if entity.lower() not in search_query.lower():
-                                search_query = f"{search_query} {entity}"
-                        logger.debug("Enhanced search query with entities: '%s'", search_query)
 
                 if language == 'en':
                     try:
