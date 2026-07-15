@@ -268,15 +268,6 @@ button {
     }
 }
 
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
-    }
-}
-
 
 /* =============================================================================
    5. Login Screen
@@ -1082,17 +1073,6 @@ button {
     border-bottom-left-radius: 4px;
 }
 
-.message-system {
-    align-self: center;
-    background-color: transparent;
-    color: var(--portal-text-muted);
-    font-style: italic;
-    font-size: 12px;
-    padding: 6px 12px;
-    max-width: 90%;
-    text-align: center;
-}
-
 .message-timestamp {
     font-size: 10px;
     color: var(--portal-text-muted);
@@ -1824,39 +1804,6 @@ button {
 .loading-container .loading-text {
     font-size: 13px;
     color: var(--portal-text-muted);
-}
-
-/* -- Skeleton Loading ----------------------------------------------------- */
-
-.skeleton {
-    background: linear-gradient(
-        90deg,
-        var(--portal-border) 25%,
-        var(--portal-bg) 50%,
-        var(--portal-border) 75%
-    );
-    background-size: 200% 100%;
-    animation: pulse 1.5s ease-in-out infinite;
-    border-radius: var(--portal-radius);
-}
-
-.skeleton-line {
-    height: 14px;
-    margin-bottom: 8px;
-}
-
-.skeleton-line.short {
-    width: 60%;
-}
-
-.skeleton-line.medium {
-    width: 80%;
-}
-
-.skeleton-circle {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
 }
 
 /* -- Toast Notification --------------------------------------------------- */

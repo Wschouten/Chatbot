@@ -1953,6 +1953,7 @@ def get_single_conversation(session_id):
                 "language": metadata.get("language"),
                 "labels": metadata.get("labels", []),
                 "notes": metadata.get("notes", []),
+                "messageMetadata": metadata.get("messageMetadata", {}),
             }
         else:
             # No metadata exists yet - use defaults
@@ -1962,6 +1963,7 @@ def get_single_conversation(session_id):
                 "language": None,
                 "labels": [],
                 "notes": [],
+                "messageMetadata": {},
             }
     except Exception as e:
         logger.error("Failed to load metadata for %s: %s", safe_id, e)
@@ -1972,6 +1974,7 @@ def get_single_conversation(session_id):
             "language": None,
             "labels": [],
             "notes": [],
+            "messageMetadata": {},
         }
 
     return jsonify(conversation), 200

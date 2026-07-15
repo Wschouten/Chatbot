@@ -392,15 +392,6 @@
                             <label class="radio-option"><input type="radio" name="exportFormat" value="csv"> CSV</label>
                         </div>
                     </div>
-                    <div>
-                        <label for="exportScopeSelect" class="text-muted"
-                            style="font-size: 12px; display: block; margin-bottom: 4px;">Scope</label>
-                        <select id="exportScopeSelect" class="btn btn-secondary" aria-label="Export scope">
-                            <option value="all">All Conversations</option>
-                            <option value="selected">Selected Only</option>
-                            <option value="labeled">Labeled Only</option>
-                        </select>
-                    </div>
                     <div style="align-self: flex-end;">
                         <button class="btn btn-primary" id="exportBtn">
                             &#128230; Download Export
@@ -409,9 +400,7 @@
                 </div>
 
                 <div id="exportConversationSelector">
-                    <div class="mb-8 flex justify-between items-center">
-                        <span class="text-muted" style="font-size: 13px;" id="exportSelectionCount">0 conversations
-                            selected</span>
+                    <div class="mb-8 flex justify-end items-center">
                         <div class="flex gap-8">
                             <button class="btn btn-sm btn-ghost" id="exportSelectAll">Select All</button>
                             <button class="btn btn-sm btn-ghost" id="exportSelectNone">Select None</button>
@@ -465,19 +454,12 @@
                         </select>
                     </div>
 
-                    <!-- Storage Usage -->
-                    <div class="mb-24">
-                        <div class="labels-panel-title">Storage Usage</div>
-                        <p class="text-muted" style="font-size: 13px;" id="storageUsageDisplay"
-                            data-setting="storage-usage">Calculating...</p>
-                    </div>
-
-                    <!-- Reset Data -->
+                    <!-- Re-sync -->
                     <div class="mb-24">
                         <div class="labels-panel-title">Data Management</div>
-                        <button class="btn btn-danger" id="resetDataBtn">Reset All Data</button>
-                        <p class="text-muted mt-8" style="font-size: 12px;">This will clear all conversations, labels,
-                            and notes, then re-seed with sample data.</p>
+                        <button class="btn btn-secondary" id="resetDataBtn">Re-sync from Backend</button>
+                        <p class="text-muted mt-8" style="font-size: 12px;">Reload all conversations and labels from the
+                            backend. No server data is affected.</p>
                     </div>
                 </div>
             </section>
@@ -491,7 +473,7 @@
     <div class="modal-overlay" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
         <div class="modal">
             <div class="modal-header">
-                <h3 id="exportModalTitle">Export Conversations</h3>
+                <h3 id="exportModalTitle">Export This Conversation</h3>
                 <button class="modal-close" id="modalClose" aria-label="Close export dialog">&times;</button>
             </div>
             <div class="modal-body">
@@ -505,23 +487,6 @@
                         <label class="radio-option">
                             <input type="radio" name="modalExportFormat" value="csv" id="modalFormatCSV">
                             CSV
-                        </label>
-                    </div>
-                </div>
-                <div class="modal-section">
-                    <span class="modal-section-label">Scope</span>
-                    <div class="checkbox-group">
-                        <label class="checkbox-option">
-                            <input type="checkbox" id="modalScopeAll" checked>
-                            All conversations
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" id="modalScopeSelected">
-                            Selected conversations only
-                        </label>
-                        <label class="checkbox-option">
-                            <input type="checkbox" id="modalScopeLabeled">
-                            Labeled conversations only
                         </label>
                     </div>
                 </div>

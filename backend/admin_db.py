@@ -318,6 +318,20 @@ def get_metadata(session_id: str) -> dict | None:
             "WHERE session_id = ? ORDER BY created_at DESC", (session_id,)
         ).fetchall()
     ]
+    # Message-level labels/ratings, keyed by message_id (same shape as get_all_metadata).
+    # Without this the single-conversation refresh wipes message metadata on every mutation.
+    message_metadata: dict = {}
+    for m in db.execute(
+        "SELECT message_id, label_name, rating FROM message_metadata WHERE session_id = ?",
+        (session_id,)
+    ).fetchall():
+        mid = m["message_id"]
+        if mid not in message_metadata:
+            message_metadata[mid] = {"labels": [], "rating": None}
+        if m["label_name"]:
+            message_metadata[mid]["labels"].append(m["label_name"])
+        if m["rating"] is not None:
+            message_metadata[mid]["rating"] = m["rating"]
     return {
         "session_id": row["session_id"],
         "status": row["status"],
@@ -326,6 +340,7 @@ def get_metadata(session_id: str) -> dict | None:
         "updated_at": row["updated_at"],
         "labels": labels,
         "notes": notes,
+        "messageMetadata": message_metadata,
     }
 
 

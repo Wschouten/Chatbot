@@ -23,7 +23,9 @@ function escapeHtml(str) {
   if (typeof str !== 'string') return '';
   const div = document.createElement('div');
   div.appendChild(document.createTextNode(str));
-  return div.innerHTML;
+  // textNode.innerHTML escapes & < > but NOT quotes; we interpolate into
+  // double-quoted attributes, so escape quotes too (prevents attribute breakout).
+  return div.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 /**
@@ -80,31 +82,17 @@ function formatDateTime(isoString) {
  * @param {string} isoString
  * @returns {string}
  */
+const _rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 function timeAgo(isoString) {
   if (!isoString) return '';
-  const now = Date.now();
   const then = new Date(isoString).getTime();
   if (isNaN(then)) return '';
-
-  const seconds = Math.floor((now - then) / 1000);
-  if (seconds < 60) return 'just now';
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return minutes === 1 ? '1 minute ago' : minutes + ' minutes ago';
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return hours === 1 ? '1 hour ago' : hours + ' hours ago';
-
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'yesterday';
-  if (days < 30) return days + ' days ago';
-
-  const months = Math.floor(days / 30);
-  if (months === 1) return '1 month ago';
-  if (months < 12) return months + ' months ago';
-
-  const years = Math.floor(months / 12);
-  return years === 1 ? '1 year ago' : years + ' years ago';
+  const seconds = Math.round((then - Date.now()) / 1000); // negative = in the past
+  const units = [['year', 31536000], ['month', 2592000], ['day', 86400], ['hour', 3600], ['minute', 60]];
+  for (const [unit, secs] of units) {
+    if (Math.abs(seconds) >= secs) return _rtf.format(Math.round(seconds / secs), unit);
+  }
+  return 'just now';
 }
 
 /**
@@ -181,26 +169,6 @@ function formatNumber(n) {
   return Number(n).toLocaleString('en-US');
 }
 
-const _listenerRegistry = new Map();
-
-function _addListener(el, type, fn) {
-  if (!_listenerRegistry.has(el)) _listenerRegistry.set(el, {});
-  const handlers = _listenerRegistry.get(el);
-  if (handlers[type]) el.removeEventListener(type, handlers[type]);
-  handlers[type] = fn;
-  el.addEventListener(type, fn);
-}
-
-function destroyListeners() {
-  _listenerRegistry.forEach((handlers, el) => {
-    Object.entries(handlers).forEach(([type, fn]) => {
-      el.removeEventListener(type, fn);
-    });
-  });
-  _listenerRegistry.clear();
-}
-
-
 /* ================================================================
    SECTION 2 - PORTAL APP CLASS
    ================================================================ */
@@ -245,7 +213,6 @@ class PortalApp {
       this._showLogin();
     }
 
-    destroyListeners();
     this._bindGlobalEvents();
   }
 
@@ -338,9 +305,11 @@ class PortalApp {
       storageManager.syncFromApi().then((result) => {
         if (result.errors.length > 0) {
           console.warn('Portal: sync had errors:', result.errors);
+          this.showToast('Kon gesprekken niet laden: ' + result.errors[0], 'error', 6000);
         }
       }).catch(err => {
         console.warn('Portal: conversation sync failed:', err);
+        this.showToast('Kon gesprekken niet laden. Is de backend bereikbaar?', 'error', 6000);
       })
     ]).then(() => {
       this._labelDefs = storageManager.getLabelDefinitions();
@@ -379,7 +348,7 @@ class PortalApp {
         return;
       }
 
-      const user = result.user || { username: username.toLowerCase(), role: 'admin' };
+      const user = result.user || { username: username.toLowerCase() };
       storageManager.setAuth(user);
       this._showPortal(user);
       this.showToast('Welcome back, ' + user.username + '!', 'success');
@@ -540,40 +509,6 @@ class PortalApp {
     const weekSub = document.querySelector('#statThisWeek + .stat-card-subtitle, [data-stat-sub="week"]');
     if (weekSub) {
       weekSub.textContent = (stats?.conversationsToday ?? 0) + ' today';
-    }
-
-    const busiestSub = document.querySelector('[data-stat-sub="busiest"]');
-    if (busiestSub && stats?.busiestHour != null) {
-      const hourLabel = stats.busiestHour.toString().padStart(2, '0') + ':00';
-      busiestSub.textContent = 'Busiest hour: ' + hourLabel;
-    }
-
-    // Language distribution in subtitle
-    const langSub = document.querySelector('[data-stat-sub="language"]');
-    if (langSub && stats?.byLanguage) {
-      const parts = Object.entries(stats.byLanguage)
-        .map(([lang, count]) => lang.toUpperCase() + ': ' + count)
-        .join(', ');
-      langSub.textContent = parts;
-    }
-
-    // Label distribution summary (top 5 labels) in a dashboard element if present
-    const labelSummary = document.querySelector('[data-stat-sub="labels"]');
-    if (labelSummary && stats?.labelCounts) {
-      const sorted = Object.entries(stats.labelCounts)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5);
-      if (sorted.length > 0) {
-        labelSummary.textContent = 'Top: ' + sorted.map(([name, count]) => name + ' (' + count + ')').join(', ');
-      } else {
-        labelSummary.textContent = 'No labels applied';
-      }
-    }
-
-    // Notes count
-    const notesSub = document.querySelector('[data-stat-sub="notes"]');
-    if (notesSub) {
-      notesSub.textContent = (stats?.notesCount ?? 0) + ' notes across all conversations';
     }
   }
 
@@ -1074,9 +1009,10 @@ class PortalApp {
 
     let newRating;
     if (direction === 'up') {
-      newRating = (conv.rating === 5) ? null : 5;
+      // up shows active for rating >= 4, so clicking an active thumb clears it
+      newRating = (conv.rating != null && conv.rating >= 4) ? null : 5;
     } else {
-      newRating = (conv.rating === 1) ? null : 1;
+      newRating = (conv.rating != null && conv.rating <= 2) ? null : 1;
     }
 
     try {
@@ -1223,11 +1159,11 @@ class PortalApp {
       results = results.filter(r => r.conversation.language === langFilter.value);
     }
     if (dateFrom && dateFrom.value) {
-      const from = new Date(dateFrom.value).getTime();
+      const from = new Date(dateFrom.value + 'T00:00:00').getTime(); // local day start
       results = results.filter(r => new Date(r.conversation.startedAt).getTime() >= from);
     }
     if (dateTo && dateTo.value) {
-      const to = new Date(dateTo.value).getTime() + 86400000; // end of day
+      const to = new Date(dateTo.value + 'T23:59:59.999').getTime(); // local day end
       results = results.filter(r => new Date(r.conversation.startedAt).getTime() <= to);
     }
 
@@ -1424,14 +1360,6 @@ class PortalApp {
     if (themeSelect) themeSelect.value = settings.theme || 'light';
     if (pageSizeInput) pageSizeInput.value = settings.pageSize || 20;
     if (langSelect) langSelect.value = settings.defaultLanguageFilter || 'all';
-
-    // Storage usage display
-    const usage = storageManager.getStorageUsage();
-    const usageEl = document.getElementById('storageUsageDisplay') || document.querySelector('[data-setting="storage-usage"]');
-    if (usageEl) {
-      const percent = ((usage.used / usage.estimatedMax) * 100).toFixed(1);
-      usageEl.textContent = usage.usedKB + ' / ~' + (usage.estimatedMax / 1024 / 1024).toFixed(0) + ' MB (' + percent + '%)';
-    }
   }
 
   /**
@@ -1482,8 +1410,8 @@ class PortalApp {
    */
   async _handleResetData() {
     const confirmed = window.confirm(
-      'This will reset all local data. ' +
-      'Conversations and labels will be re-synced from the backend. This cannot be undone.\n\nAre you sure?'
+      'Re-sync all conversations and labels from the backend?\n\n' +
+      'Local view state (filters, selection) is cleared. No server data is affected.'
     );
     if (!confirmed) return;
 
@@ -1718,7 +1646,7 @@ class PortalApp {
     // --- Add label button ---
     const addLabelBtn = document.getElementById('addLabelBtn');
     if (addLabelBtn) {
-      _addListener(addLabelBtn, 'click', (e) => {
+      addLabelBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         self._toggleAddLabelMenu();
       });
@@ -1727,7 +1655,7 @@ class PortalApp {
     // --- Add label menu: event delegation ---
     const addLabelMenu = document.getElementById('addLabelMenu');
     if (addLabelMenu) {
-      _addListener(addLabelMenu, 'click', async (e) => {
+      addLabelMenu.addEventListener('click', async (e) => {
         const menuItem = e.target.closest('.add-label-menu-item');
         if (menuItem) {
           const label = menuItem.getAttribute('data-label');
@@ -1739,19 +1667,19 @@ class PortalApp {
     // --- Rating buttons ---
     const ratingUp = document.getElementById('ratingUp');
     const ratingDown = document.getElementById('ratingDown');
-    if (ratingUp) _addListener(ratingUp, 'click', async () => await self._handleRating('up'));
-    if (ratingDown) _addListener(ratingDown, 'click', async () => await self._handleRating('down'));
+    if (ratingUp) ratingUp.addEventListener('click', async () => await self._handleRating('up'));
+    if (ratingDown) ratingDown.addEventListener('click', async () => await self._handleRating('down'));
 
     // --- Add note ---
     const addNoteBtn = document.getElementById('addNoteBtn');
     if (addNoteBtn) {
-      _addListener(addNoteBtn, 'click', async () => await self._handleAddNote());
+      addNoteBtn.addEventListener('click', async () => await self._handleAddNote());
     }
 
     // Enter key in notes textarea (Ctrl/Cmd + Enter to submit)
     const notesTextarea = document.getElementById('notesTextarea');
     if (notesTextarea) {
-      _addListener(notesTextarea, 'keydown', async (e) => {
+      notesTextarea.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
           e.preventDefault();
           await self._handleAddNote();
@@ -1762,13 +1690,13 @@ class PortalApp {
     // --- Detail export button ---
     const detailExportBtn = document.getElementById('detailExportBtn');
     if (detailExportBtn) {
-      _addListener(detailExportBtn, 'click', () => self._showExportModal());
+      detailExportBtn.addEventListener('click', () => self._showExportModal());
     }
 
     // --- Detail status select ---
     const detailStatusSelect = document.getElementById('detailStatusSelect');
     if (detailStatusSelect) {
-      _addListener(detailStatusSelect, 'change', async (e) => {
+      detailStatusSelect.addEventListener('change', async (e) => {
         if (!self.currentConversationId) return;
         const newStatus = e.target.value;
         e.target.disabled = true;
@@ -1776,6 +1704,7 @@ class PortalApp {
           await storageManager.setStatus(self.currentConversationId, newStatus);
           self.showToast('Status updated to ' + statusLabel(newStatus) + '.', 'success');
           self.renderConversationList();
+          self.renderConversationDetail(self.currentConversationId); // refresh the status badge too
         } catch (err) {
           console.error('Failed to update status:', err);
           self.showToast('Failed to update status: ' + err.message, 'error');
@@ -1792,8 +1721,8 @@ class PortalApp {
     const globalSearch = document.getElementById('globalSearch');
     if (globalSearch) {
       const debouncedGlobalSearch = debounce((val) => self.handleSearch(val), 300);
-      _addListener(globalSearch, 'input', (e) => debouncedGlobalSearch(e.target.value));
-      _addListener(globalSearch, 'keydown', (e) => {
+      globalSearch.addEventListener('input', (e) => debouncedGlobalSearch(e.target.value));
+      globalSearch.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
           self.handleSearch(e.target.value);
@@ -1810,7 +1739,7 @@ class PortalApp {
     searchFilterIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) {
-        _addListener(el, 'change', () => {
+        el.addEventListener('change', () => {
           const q = document.getElementById('globalSearch');
           if (q && q.value.trim()) self.handleSearch(q.value);
         });
@@ -1820,7 +1749,7 @@ class PortalApp {
     // --- Search results: event delegation ---
     const searchResults = document.getElementById('searchResults');
     if (searchResults) {
-      _addListener(searchResults, 'click', (e) => {
+      searchResults.addEventListener('click', (e) => {
         const card = e.target.closest('.search-result-card');
         if (card) {
           const id = card.getAttribute('data-id');
@@ -1837,19 +1766,19 @@ class PortalApp {
     // --- Export button ---
     const exportBtn = document.getElementById('exportBtn');
     if (exportBtn) {
-      _addListener(exportBtn, 'click', () => self._handleExport());
+      exportBtn.addEventListener('click', () => self._handleExport());
     }
 
     // --- Export select all / select none buttons ---
     const exportSelectAllBtn = document.getElementById('exportSelectAll');
     if (exportSelectAllBtn) {
-      _addListener(exportSelectAllBtn, 'click', () => {
+      exportSelectAllBtn.addEventListener('click', () => {
         document.querySelectorAll('.export-conv-checkbox').forEach(cb => cb.checked = true);
       });
     }
     const exportSelectNoneBtn = document.getElementById('exportSelectNone');
     if (exportSelectNoneBtn) {
-      _addListener(exportSelectNoneBtn, 'click', () => {
+      exportSelectNoneBtn.addEventListener('click', () => {
         document.querySelectorAll('.export-conv-checkbox').forEach(cb => cb.checked = false);
       });
     }
@@ -1857,22 +1786,22 @@ class PortalApp {
     // --- Export modal ---
     const modalClose = document.getElementById('modalClose');
     if (modalClose) {
-      _addListener(modalClose, 'click', () => self._hideExportModal());
+      modalClose.addEventListener('click', () => self._hideExportModal());
     }
 
     const modalExportBtn = document.getElementById('modalExportBtn');
     if (modalExportBtn) {
-      _addListener(modalExportBtn, 'click', () => self._handleModalExport());
+      modalExportBtn.addEventListener('click', () => self._handleModalExport());
     }
 
     const modalCancel = document.getElementById('exportModalCancel');
     if (modalCancel) {
-      _addListener(modalCancel, 'click', () => self._hideExportModal());
+      modalCancel.addEventListener('click', () => self._hideExportModal());
     }
 
     const exportModal = document.getElementById('exportModal');
     if (exportModal) {
-      _addListener(exportModal, 'click', (e) => {
+      exportModal.addEventListener('click', (e) => {
         // Close on backdrop click (not on modal content)
         if (e.target === exportModal) {
           self._hideExportModal();
@@ -1883,14 +1812,14 @@ class PortalApp {
     // --- Settings ---
     const themeSelect = document.getElementById('settingTheme');
     if (themeSelect) {
-      _addListener(themeSelect, 'change', (e) => {
+      themeSelect.addEventListener('change', (e) => {
         self._updateSetting('theme', e.target.value);
       });
     }
 
     const pageSizeInput = document.getElementById('settingPageSize');
     if (pageSizeInput) {
-      _addListener(pageSizeInput, 'change', (e) => {
+      pageSizeInput.addEventListener('change', (e) => {
         const val = parseInt(e.target.value, 10);
         if (val > 0 && val <= 100) {
           self._updateSetting('pageSize', val);
@@ -1900,18 +1829,18 @@ class PortalApp {
 
     const langSelect = document.getElementById('settingLanguage');
     if (langSelect) {
-      _addListener(langSelect, 'change', (e) => {
+      langSelect.addEventListener('change', (e) => {
         self._updateSetting('defaultLanguageFilter', e.target.value);
       });
     }
 
     const resetBtn = document.getElementById('resetDataBtn');
     if (resetBtn) {
-      _addListener(resetBtn, 'click', () => self._handleResetData());
+      resetBtn.addEventListener('click', () => self._handleResetData());
     }
 
     // --- Global keyboard shortcuts ---
-    _addListener(document, 'keydown', (e) => {
+    document.addEventListener('keydown', (e) => {
       // Escape closes modals and dropdowns
       if (e.key === 'Escape') {
         self._hideExportModal();
@@ -1920,7 +1849,7 @@ class PortalApp {
     });
 
     // --- Close add-label menu when clicking outside ---
-    _addListener(document, 'click', (e) => {
+    document.addEventListener('click', (e) => {
       const menu = document.getElementById('addLabelMenu');
       const btn = document.getElementById('addLabelBtn');
       if (menu && menu.classList.contains('open')) {
