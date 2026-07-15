@@ -246,6 +246,30 @@ class RagEngine:
             for key, _ in sorted_items[:10]:
                 del self.session_cache[key]
 
+    @staticmethod
+    def _build_conversation_summary(chat_history: list[dict[str, str]], language: str) -> str:
+        """The assistant's last 2 statements, so it won't contradict itself.
+
+        Returns '' when there's nothing to summarize. Identical on the RAG-context
+        and no-context paths, so both call this one helper.
+        """
+        if not chat_history:
+            return ""
+        recent = [m['content'] for m in chat_history[-6:] if m['role'] == 'assistant'][-2:]
+        if not recent:
+            return ""
+        if language == 'en':
+            return (
+                "\n\nIMPORTANT - Your recent statements in this conversation:\n"
+                + "\n".join(f"- You said: {stmt[:200]}" for stmt in recent)
+                + "\nDo NOT contradict these statements. Reference them if relevant.\n"
+            )
+        return (
+            "\n\nBELANGRIJK - Je recente uitspraken in dit gesprek:\n"
+            + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in recent)
+            + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
+        )
+
     def _extract_conversation_entities(self, chat_history: list[dict[str, str]]) -> list[str]:
         """Extract product names and key entities from recent conversation.
 
@@ -901,28 +925,7 @@ class RagEngine:
                 )
 
             # Build conversation summary for assistant awareness
-            conversation_summary = ""
-            if chat_history:
-                # Extract assistant's last 2 statements about products
-                assistant_statements = [
-                    msg['content'] for msg in chat_history[-6:]
-                    if msg['role'] == 'assistant'
-                ][-2:]
-
-                if assistant_statements:
-                    if language == 'en':
-                        conversation_summary = (
-                            "\n\nIMPORTANT - Your recent statements in this conversation:\n"
-                            + "\n".join(f"- You said: {stmt[:200]}" for stmt in assistant_statements)
-                            + "\nDo NOT contradict these statements. Reference them if relevant.\n"
-                        )
-                    else:
-                        conversation_summary = (
-                            "\n\nBELANGRIJK - Je recente uitspraken in dit gesprek:\n"
-                            + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in assistant_statements)
-                            + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
-                        )
-
+            conversation_summary = self._build_conversation_summary(chat_history, language)
             user_content = f"Context:\n{context}\n{conversation_summary}\n\nQuestion: {query}"
         elif chat_history:
             # No RAG context available, but we have conversation history.
@@ -965,26 +968,7 @@ class RagEngine:
                 )
 
             # Build conversation summary for the fallback path too
-            conversation_summary = ""
-            assistant_statements = [
-                msg['content'] for msg in chat_history[-6:]
-                if msg['role'] == 'assistant'
-            ][-2:]
-
-            if assistant_statements:
-                if language == 'en':
-                    conversation_summary = (
-                        "\n\nIMPORTANT - Your recent statements in this conversation:\n"
-                        + "\n".join(f"- You said: {stmt[:200]}" for stmt in assistant_statements)
-                        + "\nDo NOT contradict these statements. Reference them if relevant.\n"
-                    )
-                else:
-                    conversation_summary = (
-                        "\n\nBELANGRIJK - Je recente uitspraken in dit gesprek:\n"
-                        + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in assistant_statements)
-                        + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
-                    )
-
+            conversation_summary = self._build_conversation_summary(chat_history, language)
             user_content = f"Geen kennisbank context beschikbaar.{conversation_summary}\n\nQuestion: {query}"
         else:
             return "__UNKNOWN__"
