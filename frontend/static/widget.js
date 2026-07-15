@@ -19,14 +19,17 @@
     // =============================================================================
     // Configuration from script tag data attributes
     // =============================================================================
+    // Single-tenant: only the API origin varies per deploy (data-api-url on the
+    // <script> tag). Everything else is fixed. Trailing slashes stripped so we
+    // never build "https://host//api/chat".
     const scriptTag = document.currentScript || document.querySelector('script[data-api-url]');
     const CONFIG = {
-        apiUrl: scriptTag?.getAttribute('data-api-url') || '',
-        brand: scriptTag?.getAttribute('data-brand') || 'Support',
-        position: scriptTag?.getAttribute('data-position') || 'bottom-right',
-        primaryColor: scriptTag?.getAttribute('data-primary-color') || '#2C5E2E',
-        welcomeMessage: scriptTag?.getAttribute('data-welcome') || 'Hallo! Hoe kan ik je helpen?',
-        privacyUrl: scriptTag?.getAttribute('data-privacy-url') || '/privacy'
+        apiUrl: (scriptTag?.getAttribute('data-api-url') || '').replace(/\/+$/, ''),
+        brand: 'GroundCoverGroup',
+        position: 'bottom-right',
+        primaryColor: '#2C5E2E',
+        welcomeMessage: 'Hallo! Hoe kan ik je helpen?',
+        privacyUrl: '/privacy'
     };
 
     // Validate API URL
@@ -114,22 +117,42 @@
             transform: translateY(0);
         }
         .gc-chat-header {
-            background-color: var(--gc-cream);
-            color: var(--gc-text);
             padding: 16px 20px 14px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
             flex-shrink: 0;
             border-bottom: 1px solid rgba(0,0,0,0.08);
+            /* Above the consent overlay so the × close button stays clickable. */
+            position: relative;
+            z-index: 101;
+            /* ponytail: !important defeats Shopify theme flex/color overrides
+               (stylesheet !important beats theme rules but not inline styles;
+               themes don't inline-style our elements). Was JS setProperty. */
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            flex-wrap: nowrap !important;
+            gap: 0 !important;
+            background-color: var(--gc-cream) !important;
+            color: var(--gc-text) !important;
         }
         .gc-header-info {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            font-size: 15px;
-            color: var(--gc-text);
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            flex-wrap: nowrap !important;
+            gap: 8px !important;
+            font-weight: 600 !important;
+            font-size: 15px !important;
+            line-height: 1.2 !important;
+            color: var(--gc-text) !important;
+        }
+        .gc-header-info span:last-child {
+            /* Keep the brand text on one line. */
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            font-size: 15px !important;
+            color: var(--gc-text) !important;
         }
         .gc-status-dot {
             width: 8px;
@@ -138,14 +161,20 @@
             border-radius: 50%;
         }
         .gc-close-btn {
-            background: none;
-            border: none;
-            color: #999;
-            font-size: 22px;
             cursor: pointer;
-            padding: 0;
-            line-height: 1;
             transition: color 0.2s;
+            /* ponytail: !important defeats Shopify theme <button> styles. Was JS setProperty. */
+            background: none !important;
+            border: none !important;
+            color: #999999 !important;
+            font-size: 22px !important;
+            padding: 0 !important;
+            margin-left: auto !important;
+            line-height: 1 !important;
+            width: auto !important;
+            height: auto !important;
+            min-height: unset !important;
+            flex-shrink: 0 !important;
         }
         .gc-close-btn:hover {
             color: var(--gc-text);
@@ -199,7 +228,7 @@
             border-radius: 8px;
             outline: none;
             font-family: inherit;
-            font-size: 14px;
+            font-size: 16px; /* >=16px stops iOS Safari auto-zoom on focus */
             background-color: var(--gc-white);
             color: var(--gc-text);
         }
@@ -209,16 +238,24 @@
         .gc-send-btn {
             background-color: var(--gc-primary);
             color: var(--gc-white);
-            border: none;
-            border-radius: 8px;
-            width: 38px;
-            height: 38px;
             cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-shrink: 0;
             transition: opacity 0.2s;
+            /* ponytail: !important defeats Shopify theme <button> styles. Was JS setProperty. */
+            border: none !important;
+            width: 38px !important;
+            height: 38px !important;
+            min-width: unset !important;
+            max-width: unset !important;
+            min-height: unset !important;
+            max-height: unset !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            border-radius: 8px !important;
+            line-height: 1 !important;
+            flex-shrink: 0 !important;
         }
         .gc-send-btn:hover {
             opacity: 0.85;
@@ -356,15 +393,6 @@
     // Inject styles and HTML into page
     // =============================================================================
     function init() {
-        // Load Inter font (matches Railway demo page)
-        if (!document.getElementById('gc-inter-font')) {
-            const fontLink = document.createElement('link');
-            fontLink.id = 'gc-inter-font';
-            fontLink.rel = 'stylesheet';
-            fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap';
-            document.head.appendChild(fontLink);
-        }
-
         // Inject CSS
         const styleEl = document.createElement('style');
         styleEl.id = 'gc-chatbot-styles';
@@ -385,25 +413,6 @@
     // =============================================================================
     function initChat() {
         const toggleBtn = document.getElementById('gc-toggle-btn');
-
-        // Force exact dimensions via JS — overrides any Shopify theme button styles
-        [
-            ['width',         '60px'],
-            ['height',        '60px'],
-            ['min-height',    'unset'],
-            ['max-height',    'unset'],
-            ['min-width',     'unset'],
-            ['max-width',     'unset'],
-            ['padding',       '0'],
-            ['padding-top',   '0'],
-            ['padding-right', '0'],
-            ['padding-bottom','0'],
-            ['padding-left',  '0'],
-            ['box-sizing',    'border-box'],
-            ['border-radius', '50%'],
-            ['line-height',   '1'],
-        ].forEach(([prop, val]) => toggleBtn.style.setProperty(prop, val, 'important'));
-
         const widget = document.getElementById('gc-chat-widget');
         const closeBtn = widget.querySelector('.gc-close-btn');
         const chatBody = document.getElementById('gc-body');
@@ -413,99 +422,25 @@
         const consentOverlay = document.getElementById('gc-consent');
         const acceptBtn = document.getElementById('gc-accept');
         const declineBtn = document.getElementById('gc-decline');
-        const headerInfo = widget.querySelector('.gc-header-info');
-        const chatHeader = widget.querySelector('.gc-chat-header');
-        const headerText = widget.querySelector('.gc-header-info span:last-child');
-
-        // Force send button to exact size — override Shopify theme button styles
-        [
-            ['width',         '38px'],
-            ['height',        '38px'],
-            ['min-height',    'unset'],
-            ['max-height',    'unset'],
-            ['min-width',     'unset'],
-            ['max-width',     'unset'],
-            ['padding',       '0'],
-            ['padding-top',   '0'],
-            ['padding-right', '0'],
-            ['padding-bottom','0'],
-            ['padding-left',  '0'],
-            ['box-sizing',    'border-box'],
-            ['border-radius', '8px'],
-            ['line-height',   '1'],
-            ['flex-shrink',   '0'],
-        ].forEach(([prop, val]) => sendBtn.style.setProperty(prop, val, 'important'));
-
-
-        // Fix header container flex layout (Shopify overrides justify-content/flex-direction)
-        [
-            ['display',           'flex'],
-            ['flex-direction',    'row'],
-            ['justify-content',   'space-between'],
-            ['align-items',       'center'],
-            ['flex-wrap',         'nowrap'],
-            ['gap',               '0'],
-            ['background-color',  '#f5f0dc'],
-            ['color',             '#2d2d2d'],
-        ].forEach(([prop, val]) => chatHeader.style.setProperty(prop, val, 'important'));
-
-        // Fix header-info row layout
-        [
-            ['display',        'flex'],
-            ['flex-direction', 'row'],
-            ['align-items',    'center'],
-            ['flex-wrap',      'nowrap'],
-            ['gap',            '8px'],
-            ['font-size',      '15px'],
-            ['font-weight',    '600'],
-            ['line-height',    '1.2'],
-            ['color',          '#2d2d2d'],
-        ].forEach(([prop, val]) => headerInfo.style.setProperty(prop, val, 'important'));
-
-        // Prevent header text from wrapping to a second line
-        [
-            ['white-space',  'nowrap'],
-            ['overflow',     'hidden'],
-            ['text-overflow','ellipsis'],
-            ['font-size',    '15px'],
-            ['color',        '#2d2d2d'],
-        ].forEach(([prop, val]) => headerText.style.setProperty(prop, val, 'important'));
-
-        // Fix close button — push to right corner, remove Shopify sizing
-        [
-            ['padding',       '0'],
-            ['padding-top',   '0'],
-            ['padding-right', '0'],
-            ['padding-bottom','0'],
-            ['padding-left',  '0'],
-            ['margin-left',   'auto'],
-            ['font-size',     '22px'],
-            ['line-height',   '1'],
-            ['width',         'auto'],
-            ['height',        'auto'],
-            ['min-height',    'unset'],
-            ['flex-shrink',   '0'],
-            ['background',    'none'],
-            ['border',        'none'],
-            ['color',         '#999999'],
-        ].forEach(([prop, val]) => closeBtn.style.setProperty(prop, val, 'important'));
 
         let isOpen = false;
         let sessionId = null;
         let hasConsent = false;
+        let isSending = false;
+        let typingCounter = 0;
 
         const CONSENT_KEY = 'gc_chatbot_consent';
         const SESSION_KEY = 'gc_chatbot_session';
 
         // Check existing consent
         function checkConsent() {
-            const consent = localStorage.getItem(CONSENT_KEY);
-            if (consent === 'accepted') {
+            if (localStorage.getItem(CONSENT_KEY) === 'accepted') {
                 hasConsent = true;
                 sessionId = sessionStorage.getItem(SESSION_KEY);
                 consentOverlay.classList.add('gc-hidden');
                 if (!sessionId) fetchSession();
-            } else if (consent === 'declined') {
+            } else if (sessionStorage.getItem(CONSENT_KEY) === 'declined') {
+                // Decline is per-tab (sessionStorage): reloading the page re-offers consent.
                 hasConsent = false;
                 consentOverlay.classList.add('gc-hidden');
                 disableChat();
@@ -522,8 +457,7 @@
             try {
                 const response = await fetch(CONFIG.apiUrl + '/api/session', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include'
+                    headers: { 'Content-Type': 'application/json' }
                 });
                 const data = await response.json();
                 if (data.session_id) {
@@ -541,12 +475,12 @@
             isOpen = !isOpen;
             if (isOpen) {
                 widget.classList.add('gc-active');
-                const consent = localStorage.getItem(CONSENT_KEY);
-                if (!consent) {
-                    consentOverlay.classList.remove('gc-hidden');
-                } else if (consent === 'accepted') {
+                if (localStorage.getItem(CONSENT_KEY) === 'accepted') {
                     input.focus();
+                } else if (sessionStorage.getItem(CONSENT_KEY) !== 'declined') {
+                    consentOverlay.classList.remove('gc-hidden');
                 }
+                // Declined this tab: stay disabled; a reload re-offers consent.
             } else {
                 widget.classList.remove('gc-active');
             }
@@ -555,12 +489,7 @@
         // Safe markdown renderer for bot messages.
         // Escapes HTML first (XSS prevention), then applies safe transformations.
         function renderBotMessage(text) {
-            const escaped = text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-            return escaped
+            return _escHtml(text)
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                 .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
                     '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
@@ -583,7 +512,7 @@
 
         // Typing indicator
         function showTyping() {
-            const id = 'gc-typing-' + Date.now();
+            const id = 'gc-typing-' + (++typingCounter);
             const div = document.createElement('div');
             div.className = 'gc-typing';
             div.id = id;
@@ -600,6 +529,7 @@
 
         // Send message
         async function sendMessage() {
+            if (isSending) return; // send lock: one in-flight request at a time
             if (!hasConsent) {
                 appendMessage("Geef eerst toestemming. / Please accept privacy notice first.", 'bot');
                 return;
@@ -608,6 +538,11 @@
             const text = input.value.trim();
             if (!text) return;
 
+            // Guarantee a server session before the first send (never POST session_id: null).
+            if (!sessionId) await fetchSession();
+
+            isSending = true;
+            sendBtn.disabled = true;
             appendMessage(text, 'user');
             input.value = '';
 
@@ -617,9 +552,13 @@
                 const response = await fetch(CONFIG.apiUrl + '/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',
                     body: JSON.stringify({ message: text, session_id: sessionId })
                 });
+                removeTyping(typingId);
+                if (response.status === 429) {
+                    appendMessage('Je stuurt te snel berichten. Wacht even en probeer opnieuw.\n\nYou are sending messages too quickly. Please wait a moment and try again.', 'bot');
+                    return;
+                }
                 if (!response.ok) {
                     throw new Error('Server returned an error.');
                 }
@@ -628,11 +567,13 @@
                     throw new Error('Server returned an unexpected response.');
                 }
                 const data = await response.json();
-                removeTyping(typingId);
                 appendMessage(data.response || 'Sorry, an error occurred. Please try again.', 'bot');
             } catch (error) {
                 removeTyping(typingId);
                 appendMessage('Connection error. Please check your internet and try again.', 'bot');
+            } finally {
+                isSending = false;
+                sendBtn.disabled = false;
             }
         }
 
@@ -640,7 +581,7 @@
         toggleBtn.addEventListener('click', toggleChat);
         closeBtn.addEventListener('click', toggleChat);
         sendBtn.addEventListener('click', sendMessage);
-        input.addEventListener('keypress', (e) => {
+        input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') sendMessage();
         });
 
@@ -653,7 +594,7 @@
         });
 
         declineBtn.addEventListener('click', () => {
-            localStorage.setItem(CONSENT_KEY, 'declined');
+            sessionStorage.setItem(CONSENT_KEY, 'declined'); // per-tab; reload re-offers consent
             hasConsent = false;
             consentOverlay.classList.add('gc-hidden');
             disableChat();
