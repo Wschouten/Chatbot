@@ -18,6 +18,9 @@ env/
 # IDE
 .idea/
 .vscode/
+
+# Local tooling config (codex second-opinion skill)
+.codex/
 *.swp
 *.swo
 *~
