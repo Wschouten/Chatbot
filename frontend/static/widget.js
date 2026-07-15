@@ -71,9 +71,14 @@
             background-color: var(--gc-primary) !important;
             border: none !important;
             border-radius: 50% !important;
+            /* Pin width AND height so a Shopify theme min-width can't stretch the
+               circle into an oval (theme min-width beats a bare width). */
             width: 60px !important;
             height: 60px !important;
-            min-height: unset !important;
+            min-width: 60px !important;
+            max-width: 60px !important;
+            min-height: 60px !important;
+            max-height: 60px !important;
             padding: 0 !important;
             margin: 0 !important;
             box-sizing: border-box !important;
