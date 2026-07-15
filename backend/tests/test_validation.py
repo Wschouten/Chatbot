@@ -123,54 +123,31 @@ class TestShippingApi:
 class TestZendeskClient:
     """Tests for Zendesk client."""
 
-    def test_mock_ticket_creation(self):
-        """Test ticket creation without credentials returns mock."""
+    def test_mock_ticket_creation(self, monkeypatch):
+        """Without credentials (mocks enabled), ticket creation returns a mock."""
         from zendesk_client import ZendeskClient
 
-        # Without env vars, should return mock
+        monkeypatch.delenv("ZENDESK_SUBDOMAIN", raising=False)
+        monkeypatch.delenv("ZENDESK_EMAIL", raising=False)
+        monkeypatch.delenv("ZENDESK_API_TOKEN", raising=False)
+
         client = ZendeskClient()
+        result = client.create_ticket(
+            name="Test User",
+            requester_email="test@example.com",
+            question="Test question",
+        )
 
-        # Clear any existing env vars for this test
-        original_subdomain = os.environ.pop("ZENDESK_SUBDOMAIN", None)
-        original_email = os.environ.pop("ZENDESK_EMAIL", None)
-        original_token = os.environ.pop("ZENDESK_API_TOKEN", None)
+        assert result is not None
+        assert result["ticket"]["id"] == "MOCK-123"
 
-        try:
-            client = ZendeskClient()
-            result = client.create_ticket(
-                name="Test User",
-                requester_email="test@example.com",
-                question="Test question"
-            )
-
-            assert result is not None
-            assert result["ticket"]["id"] == "MOCK-123"
-        finally:
-            # Restore env vars
-            if original_subdomain:
-                os.environ["ZENDESK_SUBDOMAIN"] = original_subdomain
-            if original_email:
-                os.environ["ZENDESK_EMAIL"] = original_email
-            if original_token:
-                os.environ["ZENDESK_API_TOKEN"] = original_token
-
-    def test_is_configured_false(self):
-        """Test is_configured returns False without credentials."""
+    def test_is_configured_false(self, monkeypatch):
+        """is_configured() is False without credentials."""
         from zendesk_client import ZendeskClient
 
-        # Save and clear env vars
-        original_subdomain = os.environ.pop("ZENDESK_SUBDOMAIN", None)
-        original_email = os.environ.pop("ZENDESK_EMAIL", None)
-        original_token = os.environ.pop("ZENDESK_API_TOKEN", None)
+        monkeypatch.delenv("ZENDESK_SUBDOMAIN", raising=False)
+        monkeypatch.delenv("ZENDESK_EMAIL", raising=False)
+        monkeypatch.delenv("ZENDESK_API_TOKEN", raising=False)
 
-        try:
-            client = ZendeskClient()
-            assert not client.is_configured()
-        finally:
-            # Restore env vars
-            if original_subdomain:
-                os.environ["ZENDESK_SUBDOMAIN"] = original_subdomain
-            if original_email:
-                os.environ["ZENDESK_EMAIL"] = original_email
-            if original_token:
-                os.environ["ZENDESK_API_TOKEN"] = original_token
+        client = ZendeskClient()
+        assert not client.is_configured()
