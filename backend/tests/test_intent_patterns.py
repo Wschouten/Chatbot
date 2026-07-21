@@ -282,3 +282,39 @@ class TestPriorContactFailedRE:
 
     def test_no_match_tracking_question(self):
         assert not PRIOR_CONTACT_FAILED_RE.search("Wat is mijn zendingnummer?")
+
+
+class TestDetectTicketIntentKeywords:
+    """Regression: the decline-keyword shortcut in detect_ticket_intent must
+    match whole words, not substrings.
+
+    A naive `phrase in text_lower` made 'no' match inside names like "Jarno",
+    so the bot classified the name as a decline and answered "Geen probleem! 👍"
+    instead of continuing the handoff — leaving the user unhelped and never
+    escalated. We build the engine via __new__ (no heavy __init__) and force
+    openai_client=None so the LLM path is skipped: any non-decline input then
+    returns the 'giving_name' default.
+    """
+
+    @staticmethod
+    def _engine():
+        from rag_engine import RagEngine
+        eng = RagEngine.__new__(RagEngine)
+        eng.openai_client = None
+        return eng
+
+    def test_name_with_no_substring_is_not_declining(self):
+        eng = self._engine()
+        for name in ("Jarno", "Arno", "Bruno", "Nooteboom"):
+            assert eng.detect_ticket_intent(name) == "giving_name", (
+                f"'{name}' contains 'no' as a substring but is a name, "
+                "not a decline — must not short-circuit to 'declining'."
+            )
+
+    def test_genuine_declines_still_match(self):
+        eng = self._engine()
+        for phrase in ("Nee", "nee hoor", "laat maar", "No thanks", "niet nodig", "nope"):
+            assert eng.detect_ticket_intent(phrase) == "declining", (
+                f"'{phrase}' is a genuine decline and must still be caught "
+                "by the keyword shortcut."
+            )
