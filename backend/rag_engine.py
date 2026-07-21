@@ -1017,8 +1017,11 @@ class RagEngine:
             'niet nodig', 'hoeft niet', 'no thanks', 'nope', 'nee hoor',
             'laat maar zitten', 'geen interesse', 'not interested'
         ]
+        # Match on whole words, not substrings: a naive `phrase in text_lower`
+        # made 'no' match inside names like "Jarno"/"Arno"/"Bruno", wrongly
+        # classifying the name as a decline and derailing the whole handoff.
         for phrase in decline_keywords:
-            if phrase in text_lower:
+            if re.search(r'\b' + re.escape(phrase) + r'\b', text_lower):
                 logger.debug("Keyword match for declining: '%s' in '%s'", phrase, text[:50])
                 return 'declining'
 
