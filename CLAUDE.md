@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 110 tests, ~30s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 133 tests, ~30s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -49,7 +49,7 @@ detects it is not running in a container — prefer Docker for anything touching
 | [backend/email_client.py](backend/email_client.py) / [backend/zendesk_client.py](backend/zendesk_client.py) | Human escalation — MailerSend by default, Zendesk as the alternative (`ESCALATION_METHOD`). |
 | [backend/brand_config.py](backend/brand_config.py) | Persona, tone and copy, all from env vars. No branding belongs in code. |
 | [backend/data_retention.py](backend/data_retention.py) | GDPR cleanup of expired sessions and logs, on startup. |
-| [backend/knowledge_base/](backend/knowledge_base/) | 38 `.txt` source documents (products, FAQ, comparison guides). PDFs are supported too. |
+| [backend/knowledge_base/](backend/knowledge_base/) | 40 `.txt` source documents (products, FAQ, comparison guides, policy). PDFs are supported too. |
 | [frontend/static/widget.js](frontend/static/widget.js) | The **only** widget client, served at `/widget.js`. Injects its own `<style>` tag and markup; embedded with a single `data-api-url` attribute. |
 | [portal/js/storage.js](portal/js/storage.js) / [portal/js/app.js](portal/js/app.js) | Admin portal SPA — `storage.js` is the data layer, `app.js` the UI. |
 
@@ -148,13 +148,48 @@ falls through to RAG instead of dead-ending. Both features reactivate themselves
 the token lands. Background:
 [improvement-plan/features/60-wismo-shopify-direct-api.md](improvement-plan/features/60-wismo-shopify-direct-api.md).
 
+## Current work: chatlog-driven improvements
+
+An analysis of 257 production conversations (2026-04-22 → 2026-07-29) produced a
+five-phase plan: [improvement-plan/CHATLOG-ANALYSE-2026-07-29.md](improvement-plan/CHATLOG-ANALYSE-2026-07-29.md).
+It records the findings with real transcripts, the session ids, and the cause of each as
+`file:line` — read it before touching routing, the system prompt or the KB.
+
+- **Fase 1 (escape hatch, input validation) — done, deployed, verified 2026-07-29.**
+- **Fase 2 (knowledge base) — done, deployed, verified 2026-07-29.** Business-policy
+  answers that fed into it: [improvement-plan/OPENSTAANDE-VRAGEN-KB.md](improvement-plan/OPENSTAANDE-VRAGEN-KB.md).
+- **Fase 3 (prompt hardening) — open.** Fabricated actions ("26 mei heb ik genoteerd"),
+  the `'Zoals ik eerder noemde'` phrase the prompt itself prescribes, internal system
+  language reaching customers ("staat niet in de context"), yes/no misalignment.
+- **Fase 4 (intent router + escalation catalogue) — open.** The largest change; own PR.
+- **Fase 5 (output sanitizer + arithmetic helper) — open.** Language flips, foreign-script
+  characters mid-sentence, one confirmed volume miscalculation.
+
+Two constraints learned the hard way while doing Fase 2, both still true:
+
+- **Escalation cannot be forced from the KB.** The prompt explicitly forbids the bot from
+  sending `__HUMAN_REQUESTED__` on its own judgement, so a KB file saying "refer to a
+  colleague" has no effect when another KB file answers the same question substantively —
+  the bot picks the substantive answer. The working pattern is: allow one factual answer,
+  put the boundary at the follow-up, and say so in *every* file touching the topic.
+  Deterministic escalation is Fase 4 work.
+- **A KB contradiction is fixed in the source file, never in the prompt.**
+
 ## Conventions
 
 - Code, comments and docstrings in English. Customer-facing strings in Dutch, with an
   English variant where the flow supports both.
 - Conventional commit messages (`fix(rag):`, `refactor(portal):`, `docs:`).
 - Every bug fix gets a regression test. `backend/tests/test_fase*_regressions.py` is the
-  established pattern — one file per batch of fixes, each test named after the bug.
+  established pattern — one file per batch of fixes, each test named after the bug. Fixes
+  that come out of a chatlog analysis go in `test_chatlog_regressions.py`, named after the
+  production session that exposed them (`test_sess_7xo9rz_...`).
+- `tests/test_knowledge_base.py` guards the KB source files: the build fails on unfilled
+  template text (`[INVULLEN]`, `TODO`) or a wrong customer-service phone number. Unfilled
+  placeholders used to be read out to customers verbatim.
+- A test module that posts many chat messages must set `flask_app.limiter.enabled = False`,
+  not just `RATELIMIT_ENABLED` — otherwise the 30/min cap on `/api/chat` leaks into later
+  modules as 429s.
 - Session and log filenames are sanitised (`sanitize_session_id`) and logs are
   PII-redacted (`_redact_pii_for_log`) before hitting disk. Keep both in any new path
   that writes user data.
