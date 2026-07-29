@@ -19,9 +19,11 @@
 >   naar `franse-boomschors-45-80mm-in-big-bag`. Het probleem was de naamgeving: de KB
 >   zei "Premium = 20-45 mm", waardoor de bot grovere fracties ontkende. Nu expliciet.
 >
-> **Eén ding om te controleren:** ik lees de Belgische regel als "normaal € 15, maar bij een
-> orderbedrag onder € 50 wordt het € 21,95". Klopt die richting? Zo niet, zeg het — dan
-> draai ik het om. Het stond in de oude KB als één moeilijk leesbare regel.
+> **Belgische verzendkosten — gecorrigeerd 2026-07-29.** Mijn eerste lezing van de oude
+> KB-regel ("normaal € 15, onder € 50 orderbedrag € 21,95") was fout. Wilco: **België is
+> een vast tarief van € 15 op alles, ongeacht het orderbedrag.** De € 21,95 is uit de KB
+> verwijderd. Daarbij expliciet vastgelegd dat de gratis-verzendingsdrempel van € 50 alleen
+> voor Nederland geldt — anders zou de bot die op Belgische klanten kunnen toepassen.
 >
 > **Los hiervan, geen KB-kwestie:** de tekst `boomschors.nl/hergebruik` staat op je bigbags
 > maar geeft een 404. Dat kost klanten (één zei "volgende keer bestel ik elders"). Dat is

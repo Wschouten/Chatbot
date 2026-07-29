@@ -2,8 +2,9 @@ INFORMATIE VOOR BELGISCHE KLANTEN
 
 Bezorging België:
 - Levertijd: 1-5 werkdagen
-- Bezorgkosten: € 15
-- Bij een orderbedrag onder € 50 zijn de bezorgkosten € 21,95
+- Bezorgkosten: € 15 — dit is een vast tarief op alles, ongeacht het orderbedrag
+- Er geldt voor België geen gratis-verzendingsdrempel; de € 15 vervalt niet bij een
+  grotere bestelling
 - Minimale bestelling: Nee
 - Toeslag levering met kooiaap: € 100 extra (net als in Nederland)
 

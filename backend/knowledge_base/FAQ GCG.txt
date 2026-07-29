@@ -64,8 +64,8 @@ Nederland:
 - Vanaf een orderbedrag van € 50 is verzending gratis
 
 België:
-- Bezorgkosten € 15
-- Bij een orderbedrag onder € 50 is dit € 21,95
+- Vast tarief van € 15 op alles, ongeacht het orderbedrag
+- De gratis-verzendingsdrempel van € 50 geldt alleen in Nederland, niet in België
 
 Toeslagen die hier bovenop komen:
 - Levering met een kooiaap: € 100 extra
