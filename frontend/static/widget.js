@@ -3,11 +3,11 @@
  *
  * Usage on Shopify or any website:
  * <script src="https://your-domain.com/widget.js"
- *         data-api-url="https://your-domain.com"
- *         data-brand="GroundCoverGroup"
- *         data-position="bottom-right"
- *         data-primary-color="#2C5E2E">
+ *         data-api-url="https://your-domain.com">
  * </script>
+ *
+ * data-api-url is the only attribute read — brand, position and colours are
+ * hardcoded below (single-tenant).
  */
 (function() {
     'use strict';

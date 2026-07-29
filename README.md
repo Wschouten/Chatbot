@@ -31,21 +31,30 @@ A customizable customer support chatbot powered by RAG (Retrieval-Augmented Gene
 │   ├── evaluation/
 │   │   ├── test_set.json       # 28-question evaluation test set
 │   │   └── evaluation_report.md
-│   ├── knowledge_base/         # Place your TXT/PDF documents here (36 files)
+│   ├── knowledge_base/         # Place your TXT/PDF documents here (38 files)
+│   ├── tests/                  # Pytest suite (110 tests)
 │   ├── .env.example            # Environment variable template
 │   └── requirements.txt        # Python dependencies
 ├── frontend/
 │   ├── templates/
-│   │   └── index.html          # Chat widget HTML
+│   │   ├── index.html          # Demo page embedding the real widget
+│   │   └── portal.html         # Admin portal shell
 │   └── static/
-│       ├── style.css           # Styling (customizable)
-│       ├── script.js           # Frontend logic
-│       └── widget.js           # Embeddable widget script
-├── .dockerignore
+│       ├── style.css           # Demo page styling
+│       ├── portal.css          # Admin portal styling
+│       └── widget.js           # Embeddable widget (the only widget client)
+├── portal/
+│   └── js/
+│       ├── storage.js          # Portal data layer
+│       └── app.js              # Portal UI
+├── CLAUDE.md                   # Architecture notes & pitfalls for contributors/agents
 ├── docker-compose.yml
 ├── Dockerfile
 └── README.md
 ```
+
+> For architecture details, the conversational state machines, and the non-obvious
+> pitfalls in this codebase, see [CLAUDE.md](CLAUDE.md).
 
 ## Prerequisites
 
@@ -170,8 +179,36 @@ See `backend/.env.example` for a full annotated template. Key variables:
 To embed the chat widget on another website:
 
 ```html
-<script src="https://your-domain.com/static/widget.js"></script>
+<script src="https://your-domain.com/widget.js" data-api-url="https://your-domain.com"></script>
 ```
+
+`data-api-url` is required — it tells the widget which origin to call. Make sure that
+origin is listed in `ALLOWED_ORIGINS` on the server.
+
+## Deployment (Railway)
+
+Production runs on Railway and auto-deploys on every push to `master`, building from the
+`Dockerfile` (Gunicorn, 1 worker / 4 threads).
+
+- **Persistent storage:** a volume must be mounted at `/app/backend/data`. Sessions, chat
+  logs, `portal.db` and `chroma_db` all live there — without the volume, admin labels and
+  conversation history reset on every deploy.
+- **Verify a deploy:** `curl https://<your-app>.up.railway.app/health`. A healthy response
+  reports `status: ok` plus the state of ChromaDB, OpenAI, email and shipping.
+  `environment: local` in that response is cosmetic on Railway (`/.dockerenv` is absent);
+  it does not mean the app is running locally.
+- **Environment variables** are set in the Railway dashboard, not in `backend/.env`
+  (which is gitignored and never shipped).
+
+## Testing
+
+```bash
+cd backend
+python -m pytest
+```
+
+110 tests, roughly 30 seconds. No API keys needed — `tests/conftest.py` enables mock
+integrations and skips import-time knowledge-base ingestion.
 
 ## RAG Evaluation
 
@@ -181,6 +218,10 @@ The project includes a built-in evaluation framework. To run it:
 cd backend
 python evaluate_rag.py
 ```
+
+> **Note:** this calls the OpenAI API for every question in the test set, so it costs
+> money on your key. Run it when retrieval behaviour changes — ideally before and after,
+> so you have a comparison.
 
 Results are written to `backend/evaluation/evaluation_report.md` and `evaluation_results.json`. The current test set covers 28 questions across product info, FAQ/policy, cross-product recommendations, English queries, and hallucination checks.
 
