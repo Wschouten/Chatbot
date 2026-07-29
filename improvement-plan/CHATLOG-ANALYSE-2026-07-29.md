@@ -1,7 +1,7 @@
 # Chatlog-analyse + verbeterplan — 2026-07-29
 
-Bron: `chat-export-2026-07-29.json` — 249 sessies, ~1.400 berichten, 2026-04-22 t/m
-2026-07-29. Elke sessie is doorgelopen; bevindingen zijn geverifieerd tegen de huidige
+Bron: `chat-export-2026-07-29.json` — 257 sessies, ~1.400 berichten, 2026-04-22 t/m
+2026-07-29. Alle sessies zijn doorgelopen; bevindingen zijn geverifieerd tegen de huidige
 code (niet tegen de code van het moment van het gesprek).
 
 **Belangrijk bij het lezen:** de audit-fixes van 2026-07-15 en de handoff-fix van
