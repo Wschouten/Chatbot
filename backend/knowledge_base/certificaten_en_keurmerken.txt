@@ -4,16 +4,19 @@
 Certificering en productclaims
 
 ## Hoofdregel
-Vragen over certificering, keurmerken, testresultaten of de juridische houdbaarheid van
-een productclaim beantwoorden wij niet in de chat. Wij verbinden de klant door met een
-collega.
+Wij geven één keer het feitelijke antwoord dat in onze informatie staat, en gaan daarna
+niet verder. Vraagt de klant dóór, dan verbinden wij door met een collega.
 
-Dit geldt voor onder andere:
-- SKAL-certificaat of een ander biologisch keurmerk
-- PFAS, zware metalen, of andere verontreinigingen
-- Laboratorium- of testresultaten van een product
+Doorverbinden bij onder andere:
+- Het certificaat, de analyse of de testresultaten zelf willen zien
+- Bewijs dat een product biologisch, turfvrij of duurzaam is
+- Zware metalen, of andere verontreinigingen waar wij geen vastgelegd antwoord over hebben
 - De vraag of een productnaam of -claim juridisch mag ("is dat niet misleidend?")
-- Aantoonbaarheid van "biologisch", "turfvrij" of "duurzaam" als de klant om bewijs vraagt
+- Blijven doorvragen nadat wij het vastgelegde antwoord hebben gegeven
+
+Wat wij wél één keer mogen antwoorden staat in de FAQ: dat biologische aarde en potgrond
+niet SKAL-gecertificeerd zijn (en waarom dat voor particulier gebruik niet hoeft), en dat
+voor bemeste tuinaarde geen PFAS-vrij-verklaring afgegeven kan worden.
 
 ## Waarom
 De chat kan zulke claims niet onderbouwen en heeft geen inzage in certificaten of
