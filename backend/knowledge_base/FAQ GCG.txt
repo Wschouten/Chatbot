@@ -59,7 +59,22 @@ Houd ook rekening met een langere levertijd door de beperkte beschikbaarheid van
 Nee. Leveringen vinden uitsluitend plaats op werkdagen.
 
 ### Verzendkosten
-Voor standaard kleine pakketten bedraagt het 6.95 euro. Vanaf een bedrag van 50 euro is verzending gratis.
+Nederland:
+- Standaard kleine pakketten: € 6,95
+- Vanaf een orderbedrag van € 50 is verzending gratis
+
+België:
+- Bezorgkosten € 15
+- Bij een orderbedrag onder € 50 is dit € 21,95
+
+Toeslagen die hier bovenop komen:
+- Levering met een kooiaap: € 100 extra
+- Een tijdslot inkopen bij de transporteur: € 50 extra
+
+### Hoeveel bigbags krijg ik bij mijn bestelling?
+Bigbags zijn er in 1 m³ en 2 m³.
+Bestel je 2 m³, dan wordt dat geleverd als één bigbag van 2 m³ — niet als twee bigbags
+van 1 m³. Grotere hoeveelheden stellen wij samen uit deze twee maten.
 
 ---
 
@@ -141,7 +156,17 @@ Alleen als het gaat om directe buren in een aangrenzend pand.
 In alle andere gevallen is dit niet mogelijk.
 
 ### Nemen jullie pallets of verpakkingen mee terug?
-Nee. Verpakkingen en transportmateriaal worden niet retour genomen.
+Nee. Verpakkingen en transportmateriaal worden niet retour genomen. Dat geldt ook voor
+lege bigbags, pallets en puinzakken.
+
+### Op mijn bigbag staat boomschors.nl/hergebruik — hoe meld ik die aan?
+Die verwijzing op de zak leidt niet naar een actieve pagina; er is op dit moment geen
+inleverprogramma. Wij nemen verpakkingen en transportmateriaal niet retour, dus de bigbag
+kan niet bij ons aangemeld of ingeleverd worden.
+
+Wij spreken de klant hierin niet tegen: de tekst staat er inderdaad op. Blijft de klant
+erop terugkomen of wil die weten waarom, verbind dan door met een collega — dit is niets
+wat wij in de chat kunnen oplossen.
 
 ---
 

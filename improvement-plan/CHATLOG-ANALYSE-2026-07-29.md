@@ -335,8 +335,12 @@ narekenen tegen de lokale Flask-server.
 
 Dit is de goedkoopste kwaliteitswinst en blokkeert Fase 3 niet.
 
-**Opgeleverd 2026-07-29.** Punt 1, 2, 5 en 6 zijn klaar; punt 3 en 4 (verpakkings- en
-verzendkostentabel) wachten op de antwoorden in §5.
+**Opgeleverd 2026-07-29 — volledig af.** Punt 1, 2, 5 en 6 direct; punt 3 en 4
+(verpakkings- en verzendkostentabel) na Wilco's antwoorden, zie
+[OPENSTAANDE-VRAGEN-KB.md](OPENSTAANDE-VRAGEN-KB.md) voor wat waar terechtkwam. Twee
+nieuwe KB-bestanden: `certificaten_en_keurmerken.txt` (certificaatvragen gaan naar een
+mens) en `niet_leverbare_producten.txt` (uitgefaseerd assortiment + het fractie-misverstand
+rond Franse Boomschors Premium).
 
 Punt 6 is anders opgelost dan gepland: in plaats van de index eenmalig purgen is de
 oorzaak weg. `ingest_documents` slaat nu per chunk een `content_hash` op en
