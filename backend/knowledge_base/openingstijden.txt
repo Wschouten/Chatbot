@@ -4,7 +4,6 @@ Maandag t/m vrijdag: 09:00/17:00
 Zaterdag: Gesloten
 Zondag: Gesloten
 
-Telefonisch bereikbaar: [TIJDEN INVULLEN]
 Telefoonnummer: 0342 – 784 000
 E-mail: klantenservice@groundcovergroup.nl
 
@@ -12,6 +11,6 @@ FEESTDAGEN 2026:
 - Nieuwjaarsdag (1 jan): Gesloten
 - Koningsdag (27 apr): Gesloten
 - Bevrijdingsdag (5 mei): Open
-- Hemelvaartsdag ([datum invullen]): Gesloten
-- Pinksteren ([datum invullen]): Gesloten
+- Hemelvaartsdag (14 mei): Gesloten
+- Pinksteren (24-25 mei): Gesloten
 - Kerstmis (25-26 dec): Gesloten
