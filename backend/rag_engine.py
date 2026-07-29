@@ -3,6 +3,7 @@
 from __future__ import annotations  # MUST be first
 
 import glob
+import hashlib
 import logging
 import os
 import re
@@ -340,6 +341,8 @@ class RagEngine:
                     emb = self._get_embedding(chunk)
 
                     # Feature 12: Merge file metadata with chunk metadata
+                    # `content_hash` (added by ingest_documents) lets the next run
+                    # detect an edited file — see _document_digest.
                     chunk_metadata = {"source": source_id, "chunk": chunk_index}
                     if file_metadata:
                         chunk_metadata.update(file_metadata)
@@ -410,10 +413,22 @@ class RagEngine:
 
         return removed
 
+    @staticmethod
+    def _document_digest(text: str) -> str:
+        """Short content fingerprint, stored per chunk as `content_hash`."""
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+
     def ingest_documents(self) -> str:
         """Load PDFs/TXTs, chunk them, and save to ChromaDB.
 
-        Also removes stale entries for files that no longer exist on disk.
+        Removes stale entries for files that no longer exist on disk, and
+        re-indexes files whose content changed since they were indexed.
+
+        The change detection matters because chroma_db lives on the Railway
+        volume: without it, a *modified* knowledge-base file was skipped forever
+        (the `<file>_chunk_0` id already existed) and the stale answer survived
+        every deploy. That is how the "kooiaap" answer stayed wrong in production
+        while the corrected text was already in the file.
         """
         if not RAG_DEPENDENCIES_LOADED or not self.collection:
             return "Knowledge Base unavailable. Documents will not be indexed."
@@ -425,73 +440,79 @@ class RagEngine:
         # Phase 1: Clean up stale entries for deleted files
         removed = self._cleanup_stale_entries()
 
-        # Phase 2: Ingest new files
+        # Phase 2: Ingest new and changed files
         existing_ids: set[str] = set()
+        indexed_digests: dict[str, str] = {}
         try:
             total = self.collection.count()
             if total > 0:
-                existing_ids = set(
-                    self.collection.get(limit=total, include=[])['ids']
-                )
+                indexed = self.collection.get(limit=total, include=["metadatas"])
+                existing_ids = set(indexed['ids'])
+                for metadata in indexed["metadatas"]:
+                    if metadata and metadata.get("source") and metadata.get("content_hash"):
+                        indexed_digests[metadata["source"]] = metadata["content_hash"]
         except Exception:
             logger.debug("Unexpected error in cache lookup", exc_info=True)
 
-        count = 0
-        skipped = 0
+        counters = {"new": 0, "changed": 0, "skipped": 0}
+
+        def _ingest_if_needed(file_id: str, text: str) -> None:
+            """Index `text` unless an identical version is already indexed.
+
+            A file indexed before content hashing existed has no stored digest, so
+            it is treated as changed and re-indexed once.
+            """
+            if not text.strip():
+                return
+            digest = self._document_digest(text)
+            already_indexed = f"{file_id}_chunk_0" in existing_ids
+
+            if already_indexed:
+                if indexed_digests.get(file_id) == digest:
+                    counters["skipped"] += 1
+                    return
+                try:
+                    self.collection.delete(where={"source": file_id})
+                    logger.info("Knowledge base file changed — re-indexing %s", file_id)
+                except Exception as exc:
+                    logger.error("Could not drop old chunks for %s: %s", file_id, exc)
+                    return
+
+            file_metadata = self._extract_metadata_from_content(text, file_id)
+            file_metadata["content_hash"] = digest
+            self._ingest_text_chunks(text, file_id, file_metadata=file_metadata)
+            counters["changed" if already_indexed else "new"] += 1
 
         # Process .txt files
         for file_path in glob.glob(os.path.join(self.knowledge_base_path, "*.txt")):
             file_id = os.path.basename(file_path)
-            if f"{file_id}_chunk_0" in existing_ids:
-                skipped += 1
-                continue
-
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    text = f.read()
-                    if text.strip():
-                        # Feature 12: Extract metadata and pass to ingest
-                        file_metadata = self._extract_metadata_from_content(text, file_id)
-                        self._ingest_text_chunks(text, file_id, file_metadata=file_metadata)
-                        count += 1
-            except UnicodeDecodeError:
                 try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        text = f.read()
+                except UnicodeDecodeError:
                     with open(file_path, "r", encoding="utf-8-sig") as f:
                         text = f.read()
-                        if text.strip():
-                            # Feature 12: Extract metadata and pass to ingest
-                            file_metadata = self._extract_metadata_from_content(text, file_id)
-                            self._ingest_text_chunks(text, file_id, file_metadata=file_metadata)
-                            count += 1
-                except Exception as e:
-                    logger.error("Error reading %s (encoding fallback): %s", file_path, e)
+                _ingest_if_needed(file_id, text)
             except Exception as e:
                 logger.error("Error reading %s: %s", file_path, e)
 
         # Process .pdf files
         for file_path in glob.glob(os.path.join(self.knowledge_base_path, "*.pdf")):
             file_id = os.path.basename(file_path)
-            if f"{file_id}_chunk_0" in existing_ids:
-                skipped += 1
-                continue
-
             try:
                 reader = PdfReader(file_path)
                 text = ""
                 for page in reader.pages:
                     text += page.extract_text() + "\n"
-
-                if text.strip():
-                    # Feature 12: Extract metadata and pass to ingest
-                    file_metadata = self._extract_metadata_from_content(text, file_id)
-                    self._ingest_text_chunks(text, file_id, file_metadata=file_metadata)
-                    count += 1
+                _ingest_if_needed(file_id, text)
             except Exception as e:
                 logger.error("Error reading PDF %s: %s", file_path, e)
 
         return (
-            f"Ingestion Complete. {count} new documents processed. "
-            f"{skipped} skipped. {removed} stale sources removed."
+            f"Ingestion Complete. {counters['new']} new documents processed. "
+            f"{counters['changed']} re-indexed after changes. "
+            f"{counters['skipped']} skipped. {removed} stale sources removed."
         )
 
     def get_answer(

@@ -1,18 +1,24 @@
-ACTUELE PRIJZEN — [DATUM INVULLEN, regelmatig bijwerken]
+# KENNIS: Prijzen
 
-[Vraag aan de eigenaar/beheerder om de actuele prijslijst aan te leveren]
+## Categorie
+Prijzen en kosten
 
-Franse Boomschors:
-- Per zak 40L: €[INVULLEN]
-- Per bigbag: €[INVULLEN]
+## Waar staan de prijzen?
+Actuele prijzen staan altijd in de webshop op https://www.boomschors.nl.
+Prijzen verschillen per variant, per verpakking (zak, bigbag, big bale) en per
+hoeveelheid, en veranderen door het jaar heen.
 
-Grind / Split:
-- [INVULLEN per variant]
+Wij noemen daarom geen prijzen in de chat. Vraagt een klant naar een prijs, een
+totaalbedrag of een prijsopgave, dan verwijzen wij naar de webshop: daar staat de
+prijs per variant en worden de verzendkosten bij het afrekenen berekend.
 
-Zand:
-- [INVULLEN per variant]
+## Prijsopgave, offerte of grote afname
+Voor een offerte, een zakelijke aanvraag, of een hoeveelheid die niet in de webshop
+te kiezen is, brengen wij de klant in contact met een collega.
 
-Bezorgkosten:
-- NL: [INVULLEN]
-- BE: [INVULLEN]
-- Gratis verzending vanaf: €[INVULLEN]
+## Korting
+Wij geven geen extra korting en geen staffelkorting, ook niet bij grote afnames.
+Onze prijzen zijn al scherp geprijsd.
+
+## Prijs op de site wijkt af van de winkelwagen
+Dit kunnen wij in de chat niet nakijken. Zo'n melding gaat altijd naar een collega.

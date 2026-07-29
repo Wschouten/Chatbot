@@ -385,13 +385,62 @@ RETURN_PAYMENT_RE = re.compile(
     r'|niet\s+tevreden|ontevreden)\b',
     re.IGNORECASE,
 )
+# Order/shipment identifiers. Every pattern REQUIRES digits: a bare word must never
+# be read as an order number. Before, `[A-Za-z0-9]{4,20}` matched any 4-letter word, so
+# "Ik heb nog geen zending" produced "Je bestelnummer (GEEN) heb ik ontvangen".
+# StatusWeb codes are long digit strings, often pasted with spaces ("420 836 0360").
+SHIPMENT_NUMBER_RE = re.compile(r'\b(\d[\d\s.\-]{6,24}\d)\b')
+# Order references carry a prefix: BS9940, #12345.
+ORDER_REF_RE = re.compile(r'\b([A-Za-z]{2,3}\s?\d{3,8})\b')
+BARE_NUMBER_RE = re.compile(r'\b(\d{4,7})\b')
+
+
+def extract_order_identifier(message: str) -> tuple[str | None, bool]:
+    """Pull an order/shipment identifier out of a message.
+
+    Returns (identifier, is_statusweb). `is_statusweb` is True only for purely
+    numeric codes of >= 8 digits — the only thing the carrier API accepts.
+    Returns (None, False) when the message contains no digits at all, so the caller
+    re-prompts instead of echoing a random word back as an order number.
+    """
+    # Strip trailing punctuation (e.g. "6655?") before matching
+    cleaned = re.sub(r'([A-Za-z0-9])[?!.,]+(?=\s|$)', r'\1', message)
+
+    match = SHIPMENT_NUMBER_RE.search(cleaned)
+    if match:
+        digits = re.sub(r'\D', '', match.group(1))
+        if len(digits) >= 8:
+            return digits, True
+        if len(digits) >= 4:
+            return digits, False
+
+    match = ORDER_REF_RE.search(cleaned)
+    if match:
+        return re.sub(r'\s', '', match.group(1)).upper(), False
+
+    match = BARE_NUMBER_RE.search(cleaned)
+    if match:
+        return match.group(1), False
+
+    return None, False
+
+
 HUMAN_ESCALATION_RE = re.compile(
     # Dutch: medewerker/collega spreken|praten
     r'(medewerker|collega)\s+(spreken|praten)'
     r'|(spreken|praten)\s+met\s+een?\s+(medewerker|collega|mens|persoon)'
     r'|wil\s+een?\s+(medewerker|collega|mens)'
     r'|mag\s+ik\s+een?\s+(medewerker|collega|mens|persoon)'
-    r'|menselijke\s+hulp|doorverbinden\s+met'
+    r'|menselijke\s+hulp|doorverbinden'
+    # Phrasings real customers used that the patterns above missed (chatlog 2026-07-29):
+    # "Echte persoon" (sess_rWRRux), "Verbind me door" (sess_a_jPHmt, sess_RQ86kt),
+    # "persoon spreken" (sess_RhG2), "doorsturen naar een medewerker" (sess_x6Nu71),
+    # "iemand van de klantenservice willen spreken" (sess_ZKBIp5).
+    r'|echte?\s+(persoon|mens)|een\s+echt\s+mens'
+    r'|verbind\s+(me|mij|ons)\s+door|verbind\s+door'
+    r'|doorsturen\s+naar\s+een?\s+(medewerker|collega|mens|persoon)'
+    r'|(persoon|mens|iemand)\s+spreken'
+    r'|iemand\s+van\s+de\s+klantenservice'
     # English: speak/talk to a human/agent/person
     r'|speak\s+(to|with)\s+(a\s+)?(human|person|agent|representative|someone)'
     r'|talk\s+(to|with)\s+(a\s+)?(human|person|agent|representative|someone)'
@@ -980,6 +1029,127 @@ def _handle_chat(request_id: str) -> Response:
     user_lang = state_data.get('language', 'en')
     chat_history: list[dict[str, str]] = state_data.get('chat_history', [])
 
+    # -------------------------------------------------------------------------
+    # ESCAPE HATCH — must run BEFORE every guided flow.
+    #
+    # The tracking / Shopify / stock flows used to check only their own expected
+    # input, so a customer stuck in one could not get out: "Echte persoon" and
+    # "Verbind me door" were answered with the same shipment-number prompt, up to
+    # eight times in a row. PHONE_CONTACT_RE / HUMAN_ESCALATION_RE / FRUSTRATION_RE
+    # already existed but sat *after* the state machines, so they were unreachable.
+    # -------------------------------------------------------------------------
+    GUIDED_FLOW_KEYS = (
+        'awaiting_order_number', 'awaiting_shopify_order_number',
+        'awaiting_shopify_postcode', 'awaiting_product_name',
+    )
+
+    def _clear_guided_flows() -> None:
+        """Drop every non-handoff flow key plus its bookkeeping."""
+        for key in GUIDED_FLOW_KEYS + (
+            'pending_order_id', 'tracking_timestamp', 'pending_shopify_order_number',
+            'shopify_verification_timestamp', 'product_name_timestamp',
+            'pending_product_query', 'stock_candidates', 'flow_attempts',
+        ):
+            state_data.pop(key, None)
+
+    def _phone_response(lang: str) -> str:
+        return (
+            "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
+            "Kan ik je nog ergens anders mee helpen?"
+            if lang == 'nl' else
+            "You can reach us by phone at **0342 – 784 000**. "
+            "Is there anything else I can help you with?"
+        )
+
+    def _start_handoff(lang: str, question: str) -> str:
+        """Put the session into the handoff flow and return the opening question."""
+        _clear_guided_flows()
+        state_data['state'] = 'awaiting_name'
+        state_data['question'] = question
+        state_data['language'] = lang
+        save_session_state(session_id, state_data)
+        return (
+            "Natuurlijk! Ik breng je graag in contact met een collega. Wat is je naam?"
+            if lang == 'nl' else
+            "Of course! I'd be happy to connect you with a colleague. What's your name?"
+        )
+
+    if any(state_data.get(k) for k in GUIDED_FLOW_KEYS):
+        flow_lang = state_data.get('language', 'nl')
+        if PHONE_CONTACT_RE.search(user_message):
+            _clear_guided_flows()
+            save_session_state(session_id, state_data)
+            resp = _phone_response(flow_lang)
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
+
+        if HUMAN_ESCALATION_RE.search(user_message) or FRUSTRATION_RE.search(user_message):
+            resp = _start_handoff(flow_lang, user_message)
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
+
+    def _finish_escalation(name: str, email: str, lang: str) -> Response:
+        """Send the handoff to a human and reset the session. Shared by both paths
+        into the handoff (name→email, and email-given-as-name)."""
+        original_q = state_data.get('question', '')
+        try:
+            if ESCALATION_METHOD == "zendesk":
+                result = escalation_client.create_ticket(name, email, original_q, chat_history)
+            else:
+                result = escalation_client.send_email_async(name, email, original_q, chat_history)
+        except Exception as exc:
+            logger.error("Escalation failed with unhandled error: %s", exc)
+            result = None
+
+        # Reset state and clear history after escalation. `handoff_done` survives so a
+        # follow-up question doesn't restart the whole name/email flow.
+        save_session_state(session_id, {
+            'state': 'inactive',
+            'chat_history': [],
+            'handoff_done': True,
+        })
+
+        if result:
+            if ESCALATION_METHOD == "zendesk":
+                ticket_id = result.get('ticket', {}).get('id', '???')
+                resp = (f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op."
+                        if lang == 'nl' else
+                        f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly.")
+            else:
+                resp = ("Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail."
+                        if lang == 'nl' else
+                        "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible.")
+        else:
+            resp = ("Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op."
+                    if lang == 'nl' else
+                    "I'm sorry, something went wrong sending your message. Please contact us directly.")
+        _log_chat_message(session_id, request_id, user_message, resp)
+        return jsonify({"response": resp, "request_id": request_id})
+
+    def _flow_dead_end(lang: str, attempts_key: str = 'flow_attempts') -> str | None:
+        """Offer a human after two failed attempts in the same flow.
+
+        Returns the escalation question, or None when the flow may re-prompt once
+        more. Prevents the identical-message loops seen in production.
+        """
+        attempts = int(state_data.get(attempts_key, 0)) + 1
+        state_data[attempts_key] = attempts
+        if attempts < 2:
+            save_session_state(session_id, state_data)
+            return None
+        _clear_guided_flows()
+        state_data['state'] = 'awaiting_name'
+        state_data['question'] = user_message
+        state_data['language'] = lang
+        state_data['escalation_reason'] = 'flow_dead_end'
+        save_session_state(session_id, state_data)
+        return (
+            "Dit lukt me zo niet — laat ik een collega ernaar kijken. Wat is je naam?"
+            if lang == 'nl' else
+            "I'm not getting anywhere with this — let me have a colleague look into it. "
+            "What's your name?"
+        )
+
     # ---------------------------------------------------------
     # STATE: AWAITING_NAME (with flexible intent detection)
     # ---------------------------------------------------------
@@ -1017,9 +1187,29 @@ def _handle_chat(request_id: str) -> Response:
             # Fall through to RAG processing below (don't return here)
 
         else:  # 'giving_name'
+            # Customers sometimes answer "What's your name?" with their email address.
+            # Don't greet them as "Leuk je te ontmoeten, foo@bar.nl!" — bank the email
+            # and ask for the name once more.
+            if is_valid_email(user_message.strip()):
+                state_data['email'] = user_message.strip()
+                save_session_state(session_id, state_data)
+                resp = (
+                    "Dank je, je e-mailadres heb ik. 👍 En wat is je naam?"
+                    if user_lang == 'nl' else
+                    "Thanks, I've got your email address. 👍 And what's your name?"
+                )
+                _log_chat_message(session_id, request_id, user_message, resp)
+                return jsonify({"response": resp, "request_id": request_id})
+
             # User provided their name - extract and continue
             clean_name = rag_engine.extract_name(user_message)
             state_data['name'] = clean_name
+
+            # Email already captured (given in place of the name) — escalate now
+            # instead of asking for something we already have.
+            if state_data.get('email'):
+                return _finish_escalation(clean_name, state_data['email'], user_lang)
+
             state_data['state'] = 'awaiting_email'
             save_session_state(session_id, state_data)
 
@@ -1075,36 +1265,7 @@ def _handle_chat(request_id: str) -> Response:
         else:
             # Valid email - proceed with ticket creation
             state_data['email'] = email
-            name = state_data.get('name', 'Unknown')
-            original_q = state_data.get('question', '')
-
-            # Escalate (send email or create Zendesk ticket)
-            try:
-                if ESCALATION_METHOD == "zendesk":
-                    result = escalation_client.create_ticket(name, email, original_q, chat_history)
-                else:
-                    result = escalation_client.send_email_async(name, email, original_q, chat_history)
-            except Exception as exc:
-                logger.error("Escalation failed with unhandled error: %s", exc)
-                result = None
-
-            # Reset State and clear history after escalation
-            state_data = {
-                'state': 'inactive',
-                'chat_history': []
-            }
-            save_session_state(session_id, state_data)
-
-            if result:
-                if ESCALATION_METHOD == "zendesk":
-                    ticket_id = result.get('ticket', {}).get('id', '???')
-                    resp = f"Top! Ik heb ticket #{ticket_id} voor je aangemaakt. Een collega neemt zo snel mogelijk contact op." if user_lang == 'nl' else f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly."
-                else:
-                    resp = "Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail." if user_lang == 'nl' else "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible."
-            else:
-                resp = "Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op." if user_lang == 'nl' else "I'm sorry, something went wrong sending your message. Please contact us directly."
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _finish_escalation(state_data.get('name', 'Unknown'), email, user_lang)
 
 
     # -------------------------------------------------------------------------
@@ -1285,16 +1446,18 @@ def _handle_chat(request_id: str) -> Response:
                         "of neem contact op via klantenservice@groundcovergroup.nl."
                     )
             else:
-                if user_lang == 'en':
-                    response_text = (
-                        "I didn't find an order number in your message. "
-                        "Please enter your **Shopify order number** (e.g. **#12345**)."
-                    )
-                else:
-                    response_text = (
-                        "Ik zie geen bestelnummer in je bericht. "
-                        "Vul je **bestelnummer** in (bijv. **#12345**)."
-                    )
+                response_text = _flow_dead_end(user_lang)
+                if response_text is None:
+                    if user_lang == 'en':
+                        response_text = (
+                            "I didn't find an order number in your message. "
+                            "Please enter your **Shopify order number** (e.g. **#12345**)."
+                        )
+                    else:
+                        response_text = (
+                            "Ik zie geen bestelnummer in je bericht. "
+                            "Vul je **bestelnummer** in (bijv. **#12345**)."
+                        )
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
@@ -1326,16 +1489,18 @@ def _handle_chat(request_id: str) -> Response:
                         "Wat is je **zendingnummer**?"
                     )
             else:
-                if user_lang == 'en':
-                    response_text = (
-                        "That doesn't look like a valid postcode. "
-                        "Please enter a Dutch (e.g. **1234 AB**) or Belgian (e.g. **1000**) postcode."
-                    )
-                else:
-                    response_text = (
-                        "Dat lijkt geen geldige postcode. "
-                        "Vul een Nederlandse (bijv. **1234 AB**) of Belgische (bijv. **1000**) postcode in."
-                    )
+                response_text = _flow_dead_end(user_lang)
+                if response_text is None:
+                    if user_lang == 'en':
+                        response_text = (
+                            "That doesn't look like a valid postcode. "
+                            "Please enter a Dutch (e.g. **1234 AB**) or Belgian (e.g. **1000**) postcode."
+                        )
+                    else:
+                        response_text = (
+                            "Dat lijkt geen geldige postcode. "
+                            "Vul een Nederlandse (bijv. **1234 AB**) of Belgische (bijv. **1000**) postcode in."
+                        )
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
@@ -1346,15 +1511,8 @@ def _handle_chat(request_id: str) -> Response:
             # Fall through to normal processing
         else:
             user_lang = state_data.get('language', 'nl')
-            # Strip trailing punctuation (e.g. "6655?") before matching
-            msg_cleaned = re.sub(r'([A-Za-z0-9])[?!.,]+(?=\s|$)', r'\1', user_message)
-            number_match = re.search(r'\b([A-Za-z0-9]{4,20})\b', msg_cleaned, re.IGNORECASE)
-            if number_match:
-                order_id = number_match.group(1).upper()
-                # StatusWeb only accepts purely numeric codes of ≥8 digits.
-                # Shorter or alphanumeric codes are order/reference numbers — not yet
-                # supported by the carrier API (Shopify integration planned).
-                is_statusweb = order_id.isdigit() and len(order_id) >= 8
+            order_id, is_statusweb = extract_order_identifier(user_message)
+            if order_id:
                 _clear_tracking_state()  # clean up before API call
 
                 if is_statusweb:
@@ -1364,17 +1522,27 @@ def _handle_chat(request_id: str) -> Response:
                     if result["success"]:
                         response_text = format_shipping_response(result, order_id)
                     elif result["status"] == "not_found":
-                        if user_lang == 'en':
+                        # Two misses in a row means the number the customer has does not
+                        # work here — stop asking and put a human on it.
+                        escalation = _flow_dead_end(user_lang)
+                        if escalation:
+                            response_text = (
+                                f"❌ Zendingnummer **#{order_id}** is niet gevonden. {escalation}"
+                                if user_lang == 'nl' else
+                                f"❌ Shipment **#{order_id}** was not found. {escalation}"
+                            )
+                        elif user_lang == 'en':
                             response_text = (
                                 f"❌ Shipment **#{order_id}** was not found. "
                                 "Please check the shipment number and try again."
                             )
+                            _reset_to_awaiting_order_number()
                         else:
                             response_text = (
                                 f"❌ Zendingnummer **#{order_id}** is niet gevonden. "
                                 "Controleer het zendingnummer en probeer het opnieuw."
                             )
-                        _reset_to_awaiting_order_number()
+                            _reset_to_awaiting_order_number()
                     elif result["status"] == "no_status":
                         if user_lang == 'en':
                             response_text = (
@@ -1432,19 +1600,22 @@ def _handle_chat(request_id: str) -> Response:
                             "met onze klantenservice — zij kunnen je verder helpen."
                         )
                 else:
-                    # No valid number found in message — re-prompt once more
-                    if user_lang == 'en':
-                        response_text = (
-                            "I didn't find a shipment number in your message. "
-                            "Please enter your **shipment number** (e.g. **400000001**). "
-                            "If you don't have it, just let me know."
-                        )
-                    else:
-                        response_text = (
-                            "Ik zie geen zendingnummer in je bericht. "
-                            "Vul je **zendingnummer** in (bijv. **400000001**). "
-                            "Als je die niet hebt, laat het me weten."
-                        )
+                    # No number found — re-prompt once, then hand over to a human
+                    # rather than repeating the same sentence indefinitely.
+                    response_text = _flow_dead_end(user_lang)
+                    if response_text is None:
+                        if user_lang == 'en':
+                            response_text = (
+                                "I didn't find a shipment number in your message. "
+                                "Please enter your **shipment number** (e.g. **400000001**). "
+                                "If you don't have it, just let me know."
+                            )
+                        else:
+                            response_text = (
+                                "Ik zie geen zendingnummer in je bericht. "
+                                "Vul je **zendingnummer** in (bijv. **400000001**). "
+                                "Als je die niet hebt, laat het me weten."
+                            )
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
@@ -1599,21 +1770,24 @@ def _handle_chat(request_id: str) -> Response:
     # Detect explicit human escalation request (pre-RAG, deterministic)
     if HUMAN_ESCALATION_RE.search(user_message):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-        state_data['state'] = 'awaiting_name'
-        state_data['question'] = user_message
-        state_data['language'] = detected_lang
-        save_session_state(session_id, state_data)
 
-        if detected_lang == 'nl':
+        # Already handed off in this session: confirm it instead of asking for the
+        # name and email all over again (a customer once got "Wat is je naam?" four
+        # times in a row after the ticket had already been sent).
+        if state_data.get('handoff_done'):
             response_text = (
-                "Natuurlijk! Ik breng je graag in contact met een collega. "
-                "Wat is je naam?"
+                "Je bericht staat al bij een collega — die neemt zo snel mogelijk "
+                "contact met je op via e-mail. Wil je er niet op wachten? "
+                "Bel ons dan via **0342 – 784 000**."
+                if detected_lang == 'nl' else
+                "Your message is already with a colleague — they'll get in touch by "
+                "email as soon as possible. Don't want to wait? "
+                "Call us at **0342 – 784 000**."
             )
-        else:
-            response_text = (
-                "Of course! I'd be happy to connect you with a colleague. "
-                "What's your name?"
-            )
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            return jsonify({"response": response_text, "request_id": request_id})
+
+        response_text = _start_handoff(detected_lang, user_message)
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 

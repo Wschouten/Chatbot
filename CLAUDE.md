@@ -93,13 +93,25 @@ Every item below has broken production at least once.
   skips `ingest_documents()` (bills the OpenAI embeddings API, 12+ min cold) and
   `run_data_retention_cleanup()` (deletes files). It also sets `USE_MOCKS` and pins the
   CWD to `backend/`. Do not remove any of the three.
-- **The knowledge base does not re-index on edit.** Ingestion skips a file when
-  `<filename>_chunk_0` already exists in Chroma
-  ([rag_engine.py:445](backend/rag_engine.py) for `.txt`,
-  [:474](backend/rag_engine.py) for `.pdf`). New files are picked up; a **modified
-  existing** file is not — and because `chroma_db` lives on the Railway volume, the
-  stale index survives deploys. To push an edit through, rename the file or purge the
-  index. Deleted files are cleaned up correctly (`_cleanup_stale_entries`).
+- **The knowledge base re-indexes on edit via a content hash** (since 2026-07-29).
+  Every chunk stores `content_hash`; `ingest_documents` skips a file only when the
+  stored digest still matches, and otherwise deletes the file's chunks
+  (`collection.delete(where={"source": ...})`) before re-embedding. Renaming files to
+  force an update is no longer needed. Deleted files are still cleaned up by
+  `_cleanup_stale_entries`. Two things to keep in mind: chunks indexed *before* this
+  change carry no digest, so the first run after deploying it re-embeds the whole KB
+  once (bills the embeddings API); and editing a KB file now costs an embedding call
+  per chunk on the next boot, so batch your edits.
+  Never reintroduce a skip that looks only at whether `<filename>_chunk_0` exists —
+  because `chroma_db` lives on the Railway volume, that made a stale answer survive
+  every deploy (the "kooiaap" FAQ was answered wrong in production for weeks while the
+  corrected text sat in the file).
+- **Guided flows need an escape hatch.** `_handle_chat` checks
+  `PHONE_CONTACT_RE` / `HUMAN_ESCALATION_RE` / `FRUSTRATION_RE` **before** the
+  tracking/Shopify/stock state machines, and `_flow_dead_end()` hands over to a human
+  after two failed attempts in the same flow. Without it a customer could not get out:
+  "Echte persoon" was answered with the shipment-number prompt eight times in a row.
+  Any new `awaiting_*` flow must be added to `GUIDED_FLOW_KEYS`.
 - **Widget CSS versus the Shopify theme.** Styling belongs in the injected stylesheet
   string in `widget.js`, not in JS `setProperty` calls — a stylesheet rule with
   `!important` beats the theme. When pinning a fixed size, pin `min-width`/`max-width`
