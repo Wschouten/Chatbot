@@ -122,9 +122,25 @@ def test_sess_re9gb_graag_is_consent_not_thanks(prompt_nl, prompt_en):
 
 
 def test_sess_gralegm_no_country_from_place_name(prompt_nl, prompt_en):
-    """A customer in Breskens (NL) got Belgian payment and delivery times."""
+    """A customer in Breskens (NL) got Belgian payment and delivery times.
+
+    The first version of this rule made the bot withhold shipping costs entirely
+    when no country was stated (verified against production), so it must also
+    name the fallback: assume the Netherlands.
+    """
     assert "Leid nooit een land af uit een plaatsnaam" in prompt_nl
+    assert "ga dan uit van \nNederland" in prompt_nl or "ga dan uit van Nederland" in prompt_nl
     assert "Never infer a country from a place name" in prompt_en
+    assert "assume the Netherlands" in prompt_en
+
+
+def test_sess_b0kxul_meta_remark_is_not_a_knowledge_question(prompt_nl, prompt_en):
+    """Production check after the first fase-3 deploy: "Dat heb je niet eerder
+    genoemd." was answered with a bare "Dat kan ik hier niet zien." — no longer a
+    false claim, but no answer either."""
+    assert "is geen kennisvraag" in prompt_nl
+    assert "dat kan ik hier niet zien" in prompt_nl
+    assert "is not a knowledge question" in prompt_en
 
 
 def test_sess_rlz7_dutch_grammar_rule(prompt_nl):

@@ -373,7 +373,30 @@ nodig).
 *Verificatie:* `python evaluate_rag.py` vóór én ná (bilt de OpenAI-key — daarom precies
 één keer per kant), plus de 5 tegenstrijdige vragen uit P1-4 handmatig stellen.
 
-### Fase 3 — Prompt-hardening (P0-3, P0-4-deel, P0-5, P2-1, P2-4-deel)
+### Fase 3 — Prompt-hardening (P0-3, P0-4-deel, P0-5, P2-1, P2-4-deel) — ✅ AF
+
+**Opgeleverd 2026-07-30.** Alle 7 punten, in `rag_engine.py`, in beide taalblokken én in
+het history-only fallback-blok (dat punt 3 ook voorschreef). 11 regressietests in
+`backend/tests/test_fase3_prompt_hardening.py`; die asserten op de systeemprompt die
+`get_answer` daadwerkelijk bouwt, met een stub-client, dus zonder OpenAI-calls.
+
+Before/after op 13 echte dialogen tegen productie: [rag/fase3-before-after.md](rag/fase3-before-after.md).
+8 bevindingen aantoonbaar opgelost. Drie dingen bleken anders dan gepland:
+
+- **Twee dialogen veranderden niet, en konden dat ook niet.** `sess_1WhsN` en
+  `sess_hxOpVpQ` (bestelling wijzigen) gaan nog steeds naar track & trace: de state machine
+  in `app.py` vangt het bericht af vóór het LLM, dus het blok "WAT JE NOOIT BEVESTIGT"
+  komt er niet aan te pas. Dat is fase 4-werk (`ORDER_ADMIN_RE`) en het is de duidelijkste
+  illustratie van de grens van promptwerk.
+- **De "geen land afleiden"-regel sloeg eerst door**: geen Belgische tarieven meer, maar
+  ook geen Nederlandse. Aangescherpt naar "bij onbekend land uitgaan van Nederland en dat
+  benoemen".
+- **`sess_HYTQvO` (7 mm-paaltjes) blijft open, maar als KB-gat**: de maatvoering van de
+  massieve kunststof paaltjes staat niet in de KB, dus de ja/nee-regel heeft niets om op
+  te sturen.
+
+`evaluate_rag.py` is niet gedraaid: fase 3 raakt de prompt, niet de retrieval, en er is
+geen lokale index — de vóór/ná-vergelijking is op productie gedaan met echte dialogen.
 
 In `rag_engine.py`, beide taalblokken symmetrisch houden (de EN- en NL-prompt lopen nu
 uiteen).
