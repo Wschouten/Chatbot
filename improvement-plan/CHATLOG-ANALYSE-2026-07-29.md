@@ -506,7 +506,45 @@ De grootste wijziging; daarom na de goedkope winst.
 *Verificatie:* tabelgestuurde tests — één test per rij uit P1-1 en P1-2, met de
 originele klantzin uit de export als input.
 
-### Fase 5 — Output-sanitizer + rekenhulp (P1-3, P2-3, P2-4-deel)
+### Fase 5 — Output-sanitizer + rekenhulp (P1-3, P2-3, P2-4-deel) — ✅ AF
+
+**Opgeleverd 2026-07-30.** Punt 1, 2 en 3; punt 4 bewust niet, zie onder. 31 tests in
+`backend/tests/test_fase5_output_sanitizer.py` en `test_volume_calc.py`, geen API-calls.
+
+- **Output-poort** — `check_output(text, language)` in
+  [rag_engine.py](../backend/rag_engine.py) weigert vreemde schriften, gelekte
+  systeemtaal en de verkeerde taal. Bij afkeuring: één keer opnieuw genereren met een
+  expliciete instructie, en is het dan nog fout, dan een eerlijk terugvalantwoord in
+  plaats van het kapotte. De sentinels `__UNKNOWN__`/`__HUMAN_REQUESTED__` gaan er
+  ongemoeid door.
+- **Rekenhulp** — `backend/volume_calc.py` rekent lengte×breedte×dikte en
+  oppervlak×laagdikte deterministisch uit, inclusief liters, en het resultaat gaat als
+  feit mee in de prompt (`REKENHULP:`). Dat is een stuk simpeler dan tool-calling en
+  bereikt hetzelfde: het model hoeft alleen nog te rapporteren. `compute_volume` geeft
+  `None` zodra de maten niet betrouwbaar te lezen zijn — een fout uitgerekende regel
+  zou erger zijn dan geen regel.
+- **Geplakte product-URL** — de slug wordt de zoekterm, fracties incluis
+  ("45-80mm" blijft staan).
+
+**Gevalideerd tegen de echte export.** `check_output` over alle 803 bot-antwoorden:
+91,8% ok, 6,0% gelekte systeemtaal, 1,2% verkeerde taal, 1,0% vreemd schrift. **Alle
+18 vlaggen zijn nagelopen en het zijn allemaal terechte afkeuringen** — geen enkele
+valse positief, wat belangrijk is omdat elke afkeuring een extra OpenAI-call kost.
+
+Die run legde ook een gat in de eerste implementatie bloot dat de tests niet vonden:
+**7 van de 10 taalvlaggen waren geen modeloutput maar vaste flow-teksten.** De op de
+sessie opgeslagen taal bleef een heel gesprek plakken, dus `sess_OW87gm` kreeg zeven
+Engelse berichten op rij terwijl de klant Nederlands schreef. De output-poort ziet die
+teksten nooit. Daarom corrigeert `guess_language` (gratis heuristiek, geen API-call) nu
+de opgeslagen taal zodra het bericht van de klant er duidelijk van afwijkt, en is de
+default `'en'` → `'nl'` gezet.
+
+**Punt 4 (fallback-teksten variëren) is niet gebouwd.**
+`generate_helpful_unknown_response` is al een LLM-call met temperatuur, dus die
+varieert van zichzelf; de identieke herhalingen kwamen uit de deterministische paden,
+en die escaleren sinds fase 4 al bij de tweede dode-eind-tekst
+(`DEAD_END_LOOP_THRESHOLD` = 2). Een rotatielijst zou alleen code toevoegen zonder iets
+op te lossen.
 
 1. **Sanitizer op de gegenereerde tekst** vóór verzending:
    - **Vreemde schriften weren.** Bij Devanagari/Armeens/CJK/Cyrillisch in een NL/EN

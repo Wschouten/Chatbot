@@ -12,8 +12,162 @@ import tiktoken
 from typing import Any, Optional
 
 from brand_config import get_brand_config
+from volume_calc import compute_volume
 
 logger = logging.getLogger(__name__)
+
+# -----------------------------
+# Output sanitizer (fase 5)
+# -----------------------------
+# Three defects reached customers that no prompt rule can fully prevent, because they
+# are generation defects rather than reasoning ones. This is a hard gate on the way
+# out: one retry, then a safe answer instead of a broken one.
+
+# Devanagari, Armenian, Cyrillic, Hebrew, Arabic, CJK, Hiragana/Katakana, Hangul.
+# Real examples: "mail naar ... voor meer जानकारी" and "een SKAL-certificaat niet պարտ
+# verplicht" (sess_wGocFXem, sess_j5mH and five others).
+_FOREIGN_SCRIPT_RE = re.compile(
+    r'[Ѐ-ӿ԰-֏֐-׿؀-ۿऀ-ॿ'
+    r'぀-ヿ一-鿿가-힯]'
+)
+
+# Internal vocabulary that must never reach a customer. Backstop for the fase-3
+# prompt rules — the prompt is the first line of defence, this is the second.
+_SYSTEM_LANGUAGE_RE = re.compile(
+    r'\b(in de context|de context|volgens de context|aangeleverde informatie'
+    r'|kennisbank|niet ingevuld|prijslijst is niet ingevuld'
+    r'|in the context|the context provided|provided information|knowledge base'
+    r'|not filled in)\b',
+    re.IGNORECASE,
+)
+
+# Deliberately non-overlapping between the two languages.
+_NL_MARKERS = frozenset(
+    'de het een je niet voor met van ook maar wij kun kunt geen wordt wel naar zijn'.split()
+)
+_EN_MARKERS = frozenset(
+    'the you your our not with and this they will can are have please about'.split()
+)
+# The model's own control tokens: never sanitized, they are consumed by app.py.
+_SENTINELS = ('__UNKNOWN__', '__HUMAN_REQUESTED__')
+
+
+def _looks_like_other_language(text: str, language: str) -> bool:
+    """True when the answer is clearly written in the language we did not ask for.
+
+    Deliberately conservative — a false positive costs an extra OpenAI call. It takes
+    at least three markers of the wrong language and twice as many as of the right one.
+    """
+    words = re.findall(r"[a-z']+", text.lower())
+    nl_hits = sum(1 for word in words if word in _NL_MARKERS)
+    en_hits = sum(1 for word in words if word in _EN_MARKERS)
+    if language == 'nl':
+        return en_hits >= 3 and en_hits > 2 * nl_hits
+    return nl_hits >= 3 and nl_hits > 2 * en_hits
+
+
+def guess_language(text: str) -> Optional[str]:
+    """Cheap language guess, or None when not confident. No API call.
+
+    Used to correct the language stored on the session: it used to stick for the whole
+    conversation, so sess_OW87gm received seven English messages in a row in a Dutch
+    conversation. Those were canned flow strings, which the output gate below never
+    sees — they are not model output.
+    """
+    words = re.findall(r"[a-z']+", text.lower())
+    nl_hits = sum(1 for word in words if word in _NL_MARKERS)
+    en_hits = sum(1 for word in words if word in _EN_MARKERS)
+    if nl_hits >= 2 and nl_hits > en_hits:
+        return 'nl'
+    if en_hits >= 2 and en_hits > nl_hits:
+        return 'en'
+    return None
+
+
+def check_output(text: str, language: str) -> Optional[str]:
+    """Return why `text` must not be sent to the customer, or None if it is fine."""
+    if not text or any(sentinel in text for sentinel in _SENTINELS):
+        return None
+    if _FOREIGN_SCRIPT_RE.search(text):
+        return 'foreign_script'
+    if _SYSTEM_LANGUAGE_RE.search(text):
+        return 'system_language'
+    if _looks_like_other_language(text, language):
+        return 'wrong_language'
+    return None
+
+
+def _retry_instruction(problem: str, language: str) -> str:
+    """The extra system line for the single regeneration attempt."""
+    if problem == 'foreign_script':
+        return (
+            "Je vorige antwoord bevatte tekens uit een ander schrift. Schrijf het "
+            "opnieuw, uitsluitend met Nederlandse woorden en Latijnse letters."
+            if language == 'nl' else
+            "Your previous answer contained characters from another script. Write it "
+            "again using only English words and Latin characters."
+        )
+    if problem == 'system_language':
+        return (
+            "Je vorige antwoord gebruikte interne woorden als 'context' of "
+            "'kennisbank'. Schrijf het opnieuw als gewone klantzin, zonder die woorden."
+            if language == 'nl' else
+            "Your previous answer used internal words such as 'context' or 'knowledge "
+            "base'. Write it again as a normal customer-facing sentence, without them."
+        )
+    return (
+        "Je vorige antwoord stond in de verkeerde taal. Antwoord in het Nederlands."
+        if language == 'nl' else
+        "Your previous answer was in the wrong language. Answer in English."
+    )
+
+
+def _calculation_block(query: str, language: str) -> str:
+    """Pre-computed arithmetic, handed to the model as a fact rather than a task.
+
+    Cheaper and far more reliable than tool-calling for this one narrow job: the model
+    only has to report the line, and `compute_volume` returns None whenever the
+    dimensions cannot be read with confidence.
+    """
+    line = compute_volume(query)
+    if not line:
+        return ""
+    if language == 'en':
+        return (
+            f"\n\nCALCULATION (already computed for you, correct — report it as your own, "
+            f"show the step):\n{line}"
+        )
+    return (
+        f"\n\nREKENHULP (al voor je uitgerekend en correct — geef dit als je eigen "
+        f"antwoord, toon de rekenstap):\n{line}"
+    )
+
+
+# Pasted product URLs: sess_xDtNfb, sess_k8v1P9 and sess_goVuk got nothing back, or
+# just their own URL echoed. The slug carries the product name, so use it to search.
+_PRODUCT_URL_RE = re.compile(
+    r'https?://(?:www\.)?boomschors\.nl/\S*?/([a-z0-9][a-z0-9-]{3,})', re.IGNORECASE
+)
+
+
+def slug_to_query(text: str) -> Optional[str]:
+    """Turn a pasted boomschors.nl product URL into a searchable product name."""
+    match = _PRODUCT_URL_RE.search(text)
+    if not match:
+        return None
+    # Keep the numbers: the fraction is half the product name ("45-80mm").
+    return match.group(1).replace('-', ' ').strip() or None
+
+
+def _safe_fallback(language: str) -> str:
+    """Sent when even the retry is unusable. Honest, and it keeps the conversation open."""
+    return (
+        "Daar kan ik je zo niet goed genoeg mee helpen. Wil je dat ik een collega "
+        "laat meekijken?"
+        if language == 'nl' else
+        "I can't help you properly with that. Would you like me to have a colleague "
+        "take a look?"
+    )
 
 # -----------------------------
 # OpenAI Client State
@@ -587,6 +741,12 @@ class RagEngine:
                 if chat_history:
                     search_query = self._reformulate_query(query, chat_history)
 
+                # A pasted product URL is unsearchable as-is; its slug is not.
+                slug_query = slug_to_query(query)
+                if slug_query:
+                    logger.debug("Product URL detected, searching for '%s'", slug_query)
+                    search_query = slug_query
+
                 if language == 'en':
                     try:
                         translation = self.openai_client.chat.completions.create(
@@ -977,7 +1137,10 @@ class RagEngine:
 
             # Build conversation summary for assistant awareness
             conversation_summary = self._build_conversation_summary(chat_history, language)
-            user_content = f"Context:\n{context}\n{conversation_summary}\n\nQuestion: {query}"
+            user_content = (
+                f"Context:\n{context}\n{conversation_summary}"
+                f"{_calculation_block(query, language)}\n\nQuestion: {query}"
+            )
         elif chat_history:
             # No RAG context available, but we have conversation history.
             # Use conversation history to maintain context instead of returning __UNKNOWN__.
@@ -1030,7 +1193,10 @@ class RagEngine:
 
             # Build conversation summary for the fallback path too
             conversation_summary = self._build_conversation_summary(chat_history, language)
-            user_content = f"Geen kennisbank context beschikbaar.{conversation_summary}\n\nQuestion: {query}"
+            user_content = (
+                f"Geen kennisbank context beschikbaar.{conversation_summary}"
+                f"{_calculation_block(query, language)}\n\nQuestion: {query}"
+            )
         else:
             return "__UNKNOWN__"
 
@@ -1066,7 +1232,32 @@ class RagEngine:
                 temperature=0.7,
                 max_completion_tokens=350
             )
-            return response.choices[0].message.content or ""
+            answer = response.choices[0].message.content or ""
+
+            # Output gate (fase 5): foreign script, leaked system vocabulary or the
+            # wrong language. One regeneration, then a safe answer — never the broken
+            # one, which is what customers actually received.
+            problem = check_output(answer, language)
+            if problem:
+                logger.warning("Output rejected (%s): %r", problem, answer[:120])
+                messages.append({"role": "assistant", "content": answer})
+                messages.append({
+                    "role": "system", "content": _retry_instruction(problem, language),
+                })
+                retry = self.openai_client.chat.completions.create(
+                    model=self.chat_model,
+                    messages=messages,
+                    temperature=0.3,
+                    max_completion_tokens=350,
+                )
+                answer = retry.choices[0].message.content or ""
+                still_broken = check_output(answer, language)
+                if still_broken:
+                    logger.error(
+                        "Output still rejected after retry (%s): %r", still_broken, answer[:120]
+                    )
+                    return _safe_fallback(language)
+            return answer
         except Exception as e:
             logger.error("Error querying OpenAI: %s", e)
             if language == 'en':
