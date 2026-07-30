@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 133 tests, ~30s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 231 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -47,6 +47,7 @@ detects it is not running in a container — prefer Docker for anything touching
 | [backend/admin_db.py](backend/admin_db.py) | SQLite (`portal.db`) for portal metadata: labels, notes, statuses, message ratings. |
 | [backend/shipping_api.py](backend/shipping_api.py) | Van Den Heuvel StatusWeb track & trace (SOAP via `zeep`). |
 | [backend/email_client.py](backend/email_client.py) / [backend/zendesk_client.py](backend/zendesk_client.py) | Human escalation — MailerSend by default, Zendesk as the alternative (`ESCALATION_METHOD`). |
+| [backend/volume_calc.py](backend/volume_calc.py) | `compute_volume` — deterministic m²/m³/litre arithmetic, injected into the prompt as a fact so the model never multiplies. Returns `None` unless the dimensions parse with confidence. |
 | [backend/brand_config.py](backend/brand_config.py) | Persona, tone and copy, all from env vars. No branding belongs in code. |
 | [backend/data_retention.py](backend/data_retention.py) | GDPR cleanup of expired sessions and logs, on startup. |
 | [backend/knowledge_base/](backend/knowledge_base/) | 40 `.txt` source documents (products, FAQ, comparison guides, policy). PDFs are supported too. |
@@ -130,6 +131,13 @@ Every item below has broken production at least once.
   `!important` beats the theme. When pinning a fixed size, pin `min-width`/`max-width`
   as well, not just `width`: the theme's `min-width` stretched the round toggle button
   into an oval in production (`59ed947`, see [widget.js:74-79](frontend/static/widget.js)).
+- **The output gate only sees model output.** `check_output` ([rag_engine.py](backend/rag_engine.py))
+  rejects foreign scripts, leaked system vocabulary and the wrong language, retries once
+  and otherwise returns a safe answer. It cannot see the canned flow strings in
+  `app.py` — those follow `state_data['language']`, which used to stick for a whole
+  conversation (seven English messages to a Dutch customer). `guess_language` corrects
+  the stored value per message; keep any new canned copy behind that, not behind a
+  hard-coded language.
 - **Timestamps.** Chat logs and data retention are UTC-aware; session and tracking state
   stay naive (they are only ever compared against each other). Do not mix the two
   halfway through a flow.

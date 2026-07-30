@@ -16,7 +16,7 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from rag_engine import RagEngine, get_openai_health
+from rag_engine import RagEngine, get_openai_health, guess_language
 from shipping_api import get_shipping_client
 from zendesk_client import ZendeskClient
 from email_client import EmailClient
@@ -1180,8 +1180,19 @@ def _handle_chat(request_id: str) -> Response:
     # Load State from Disk
     state_data = get_session_state(session_id)
     current_state = state_data.get('state', 'inactive')
-    user_lang = state_data.get('language', 'en')
+    # Dutch is the primary language, so that is the default when nothing is known yet.
+    user_lang = state_data.get('language', 'nl')
     chat_history: list[dict[str, str]] = state_data.get('chat_history', [])
+
+    # The stored language used to stick for a whole conversation, and every canned flow
+    # string followed it: sess_OW87gm got seven English messages in a row while the
+    # customer wrote Dutch. Correct it when this message clearly disagrees. Free
+    # heuristic, no API call, returns None unless it is confident.
+    guessed_lang = guess_language(user_message)
+    if guessed_lang and guessed_lang != user_lang:
+        logger.info("[%s] Language corrected: %s -> %s", request_id, user_lang, guessed_lang)
+        user_lang = guessed_lang
+        state_data['language'] = guessed_lang
 
     # -------------------------------------------------------------------------
     # ESCAPE HATCH — must run BEFORE every guided flow.
