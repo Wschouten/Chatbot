@@ -63,6 +63,19 @@ Admin auth accepts either an `X-Admin-Key` header (scripts) or a signed HttpOnly
 
 ## Conversational state machines
 
+**Routing happens in one place.** `classify_intent(message)` ([app.py](backend/app.py))
+returns exactly one label per fresh message, in a fixed priority order:
+`human_request > order_admin > escalate_topic > pre_purchase > return_payment >
+tracking > stock > rag`. Everything that needs a human returns before the flows below
+are reached. Do not add a competing regex check next to a flow — extend the router,
+or the old failure comes back: routing used to be independent regexes in reading
+order, so "ik wil iemand spreken over mijn bestelling" matched `TRACKING_INTENT_RE`
+on "mijn bestelling" and got the shipment-number prompt.
+
+Every path into the handoff goes through `_start_handoff`, which is where the
+already-handed-off guard and the skip-the-name-if-known shortcut live. Adding a new
+entry point means calling that, not setting `state = 'awaiting_name'` yourself.
+
 Session state is one JSON dict per session on disk, via `get_session_state` /
 `save_session_state` ([app.py:700](backend/app.py)), keyed with `awaiting_*` and
 `pending_*` flags. There are four flows:

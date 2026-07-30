@@ -427,7 +427,55 @@ uiteen).
 aangepaste prompt en de antwoorden vergelijken. Sla de before/after op onder
 `improvement-plan/rag/`.
 
-### Fase 4 — Intent-router + escalatiecatalogus (P1-1, P1-2, P2-2)
+### Fase 4 — Intent-router + escalatiecatalogus (P1-1, P1-2, P2-2) — ✅ AF
+
+**Opgeleverd 2026-07-30.** Alle 6 punten. `classify_intent(message)` in
+[app.py](../backend/app.py) neemt nu één routeringsbesluit met vaste prioriteit
+(`human_request > order_admin > escalate_topic > pre_purchase > return_payment >
+tracking > stock > rag`); de losse regexes in leesvolgorde zijn weg. Het
+escalatieblok staat nu vóór track & trace in plaats van erna, wat de kern van P1-1
+was. 48 tests in `backend/tests/test_fase4_intent_router.py`, tabelgestuurd met één
+rij per bevinding uit P1-1 en P1-2.
+
+**Gevalideerd tegen de echte export, niet alleen tegen de tests.** `classify_intent`
+is over alle 803 klantberichten uit `chat-export-2026-07-29.json` gehaald:
+
+| label | aandeel |
+|---|---|
+| rag | 79,1% |
+| order_admin | 5,5% |
+| stock (blijft uit tot Shopify) | 4,1% |
+| escalate_topic | 3,1% |
+| pre_purchase | 3,0% |
+| tracking | 2,9% |
+| human_request | 1,7% |
+| return_payment | 0,6% |
+
+**10,3% gaat naar een mens.** Alle 83 zijn nagelopen; het zijn de gevallen uit P1-1
+en P1-2 plus de BS-nummers. Dat laatste is de grootste groep: elke sessie waar de
+bot voorheen doodliep op "ik kan niet op bestelnummer zoeken" of een BS-code als
+product beschreef.
+
+Twee dingen die deze validatie opleverde en die de tests niet hadden gevonden:
+
+- **De eerste versie van de catalogus miste de meeste échte klantzinnen.** Hij was
+  geschreven op de samenvattingen in dit rapport, niet op de transcripten: "er zat
+  te weinig aarde in voor wat ik besteld heb" (`sess_HLzFUh`), "Dat staat wel op de
+  zak" (`sess_TDOgT58`), "Hij gaat 1x over en daarna wordt het verbroken"
+  (`sess_8K0j5`) en "Waarom vragen jullie een andere prijs" (`sess_GiDjnx`) vielen
+  allemaal door naar RAG. De patronen werken nu met tekenvensters
+  (`[^.?!]{0,40}`) in plaats van woordafstanden, en de testzinnen zijn nu letterlijk
+  uit de export overgenomen, inclusief typo's.
+- **Eén bewuste niet-escalatie:** "beste prijs" en kortingsvragen blijven bij RAG.
+  Daar is bedrijfsbeleid voor ("wij geven geen extra korting"), dus een collega
+  ermee lastigvallen kost alleen tijd. `offerte`, `prijsopgave` en `staffel` gaan
+  wél door.
+
+Bekende restpunten, klein en bewust: "ik wil weten of ik na bestelling de
+bezorgdatum kan doorgeven" (`sess_t9qJlj`) escaleert terwijl het een beleidsvraag is
+— een regex ziet het verschil niet tussen "kan dat in het algemeen" en "doe dit voor
+mij". En `sess_MI7d` ("Het gaat niet gied op de website") blijft onopgemerkt door de
+typo.
 
 De grootste wijziging; daarom na de goedkope winst.
 
