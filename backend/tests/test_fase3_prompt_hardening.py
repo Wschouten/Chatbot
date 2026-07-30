@@ -141,6 +141,13 @@ def test_sess_b0kxul_meta_remark_is_not_a_knowledge_question(prompt_nl, prompt_e
     assert "is geen kennisvraag" in prompt_nl
     assert "dat kan ik hier niet zien" in prompt_nl
     assert "is not a knowledge question" in prompt_en
+    # Second production check: the first version of this rule made the bot argue
+    # back ("Dat klopt niet; ik heb dat net wel genoemd.") — exactly the P0-5
+    # behaviour it was meant to stop.
+    assert "'dat klopt niet'" in prompt_nl
+    assert "verontschuldiging" in prompt_nl
+    assert "'that's not correct'" in prompt_en
+    assert "brief apology" in prompt_en
 
 
 def test_sess_rlz7_dutch_grammar_rule(prompt_nl):
