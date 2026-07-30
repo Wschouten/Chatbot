@@ -1881,11 +1881,20 @@ def _handle_chat(request_id: str) -> Response:
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
 
         if intent == 'order_admin':
-            opening = (
-                "Een bestelling wijzigen of aanvullen kan ik zelf niet — dat doet een collega voor je."
-                if detected_lang == 'nl' else
-                "I can't change or add to an order myself — a colleague will do that for you."
-            )
+            if ORDER_ADMIN_RE.search(user_message):
+                opening = (
+                    "Een bestelling wijzigen of aanvullen kan ik zelf niet — dat doet een collega voor je."
+                    if detected_lang == 'nl' else
+                    "I can't change or add to an order myself — a colleague will do that for you."
+                )
+            else:
+                # Only a BS-code, no request attached: "Een bestelling wijzigen kan ik
+                # niet" would answer a question the customer never asked.
+                opening = (
+                    "Ik kijk dit ordernummer even met een collega na."
+                    if detected_lang == 'nl' else
+                    "Let me have a colleague look up this order number."
+                )
         elif intent == 'escalate_topic':
             opening = (
                 "Dit wil ik goed voor je geregeld hebben, dus ik zet het door naar een collega."

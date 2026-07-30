@@ -221,6 +221,21 @@ def test_sess_i2ltoq_bs_number_is_never_described_as_a_product(client):
     assert _load_session(sid).get("state") == "awaiting_name"
 
 
+def test_bare_bs_code_does_not_claim_the_customer_asked_for_a_change(client):
+    """Production check after the fase-4 deploy: a bare "BS6794" was answered with
+    "Een bestelling wijzigen of aanvullen kan ik zelf niet" — an answer to a
+    question the customer never asked."""
+    sid = _make_session_id()
+    data = _post(client, "BS6794", sid)
+    assert "wijzigen" not in data["response"].lower()
+    assert "ordernummer" in data["response"].lower()
+
+    # With an actual change request the explanatory opening must still be used.
+    other = _make_session_id()
+    data = _post(client, "Ik wil mijn bestelling BS6794 wijzigen", other)
+    assert "wijzigen" in data["response"].lower()
+
+
 def test_sess_sjnuc_interrupted_handoff_keeps_the_name(client):
     """The handoff used to vanish when the customer asked something in between,
     and started over from "Wat is je naam?" afterwards."""
