@@ -967,7 +967,10 @@ class RagEngine:
                     "- If the CONTEXT contains a line '## Link: <url>', share that URL when the customer asks about a price, more product information, or wants to order.\n"
                     "- Format: 'View the product here: <url>'\n"
                     "- Only share the URL if it appears in the CONTEXT — never invent URLs.\n"
-                    "- If no URL is in the CONTEXT, refer to the webshop: https://www.boomschors.nl\n\n"
+                    "- If no URL is in the CONTEXT, refer to the webshop: https://www.boomschors.nl\n"
+                    "- If the customer pastes only a product URL with no question attached: briefly summarise "
+                    "what you know about that product (type, fraction, packaging) and ask what they'd like to "
+                    "know. NEVER answer with just a link — that gives the customer nothing.\n\n"
 
                     "OTHER BEHAVIORAL RULES:\n"
                     "- For greetings: respond warmly and ask how you can help\n"
@@ -1112,7 +1115,10 @@ class RagEngine:
                     "- Als de CONTEXT een regel bevat met '## Link: <url>', geef die URL dan mee wanneer de klant vraagt naar de prijs, meer productinformatie of wil bestellen.\n"
                     "- Formaat: 'Bekijk het product hier: <url>'\n"
                     "- Geef een URL alleen als deze letterlijk in de CONTEXT staat — verzin nooit URLs.\n"
-                    "- Als er geen URL in de CONTEXT staat, verwijs dan naar de webshop: https://www.boomschors.nl\n\n"
+                    "- Als er geen URL in de CONTEXT staat, verwijs dan naar de webshop: https://www.boomschors.nl\n"
+                    "- Plakt de klant alleen een product-URL zonder vraag erbij? Vat dan kort samen wat je "
+                    "over dat product weet (soort, fractie, verpakking) en vraag wat hij precies wil weten. "
+                    "Antwoord NOOIT met alleen een link — dan heeft de klant niets aan je.\n\n"
 
                     "OVERIGE GEDRAGSREGELS:\n"
                     "- Bij begroetingen: reageer vriendelijk en vraag hoe je kunt helpen\n"

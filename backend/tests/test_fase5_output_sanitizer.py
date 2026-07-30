@@ -118,6 +118,28 @@ def test_non_product_text_yields_no_query():
     assert slug_to_query("https://www.example.com/products/iets-anders") is None
 
 
+def test_a_pasted_url_must_not_be_answered_with_only_a_link(monkeypatch):
+    """Production check after the fase-5 deploy: the slug found the right product, but
+    the answer was just the link back — the sess_goVuk defect. There is no question in
+    the message, so the prompt has to say what to do with it."""
+    monkeypatch.setattr(rag_engine, "RAG_DEPENDENCIES_LOADED", True)
+    captured = {}
+
+    class _Capturing(_ScriptedOpenAI):
+        def _create(self, **kwargs):
+            captured['system'] = kwargs['messages'][0]['content']
+            return super()._create(**kwargs)
+
+    stub = _Stub(["Dat is Franse boomschors 45-80 mm in een bigbag."])
+    stub.openai_client = _Capturing(["Dat is Franse boomschors 45-80 mm in een bigbag."])
+    RagEngine.get_answer(
+        stub, "https://www.boomschors.nl/products/franse-boomschors-45-80mm-in-big-bag",
+        language="nl",
+    )
+    assert "alleen een product-URL zonder vraag" in captured['system']
+    assert "NOOIT met alleen een link" in captured['system']
+
+
 # ---------------------------------------------------------------------------
 # The gate inside get_answer: one retry, then a safe answer
 # ---------------------------------------------------------------------------
