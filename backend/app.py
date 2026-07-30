@@ -317,13 +317,22 @@ MAX_MESSAGE_LENGTH = 1000
 VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
 LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
 HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
+# Hypothetical / not-yet-ordered questions. RAG answers these; the tracking and
+# stock flows must never ask such a customer for a shipment number.
+# The word gap was {0,5}, which failed on real sentences: "als ik deze ochtend frans
+# boomschors 1 kuub bestel" has six words in between (sess_7Xo9Rz).
 PRE_PURCHASE_RE = re.compile(
-    r'\b(als ik (?:\w+\s+){0,5}bestel'
+    r'\b(als ik (?:\w+\s+){0,10}bestel'
     r'|als ik (een )?bestelling (zou )?plaatsen'
     r'|wanneer kan ik (het )?verwachten als'
     r'|indien ik bestel'
+    r'|voordat ik bestel|voor(dat)? ik ga bestellen'
+    r'|wil (gaan )?bestellen|ga bestellen|wil ik bestellen'
+    r'|nog geen bestelling|nog niet besteld|nog geen order'
+    r'|als ik (vandaag|nu|morgen|vanmiddag|vanochtend|vanavond|deze week)'
     r'|if i (place an? )?order'
     r'|if i (buy|purchase|order)'
+    r'|before i order|not ordered yet'
     r'|when (would|will) (it|the order) (be )?delivered if)\b',
     re.IGNORECASE
 )
@@ -485,6 +494,110 @@ PRIOR_CONTACT_FAILED_RE = re.compile(
     re.IGNORECASE,
 )
 
+# -----------------------------------------------------------------------------
+# Fase 4 — order administration and the escalation catalogue.
+#
+# Both route straight to a human. They exist because the bot used to answer these
+# with the shipment-number prompt (TRACKING_INTENT_RE matched "mijn bestelling"
+# first) or with "ik kan dat niet zien", repeated until the customer gave up.
+# -----------------------------------------------------------------------------
+
+# Things only a colleague can do: change, cancel or add to an order, move a
+# delivery, correct an invoice. sess_AzJ5 (afleverplek wijzigen), sess_rTH9QN,
+# sess_t07xU9, sess_R1ozEf, sess_3cqmat, sess_1WhsN, sess_hxOpVpQ.
+ORDER_ADMIN_RE = re.compile(
+    r'(bestelling|order|zending|levering|bezorging)\s+(\w+\s+){0,3}'
+    r'(wijzigen|aanpassen|annuleren|veranderen|cancelen|omzetten|stopzetten)'
+    r'|(wijzig|annuleer|verander|pas)\s+(\w+\s+){0,2}(bestelling|order|adres|afleveradres|leverdatum)'
+    r'|(bestelling|order)\s+(\w+\s+){0,3}(geannuleerd|gewijzigd)\s+worden'
+    r'|(afleveradres|bezorgadres|afleverplek|losplek|leverdatum|bezorgdatum|tijdslot|leverdag)'
+    r'\s+(\w+\s+){0,3}(wijzigen|aanpassen|veranderen|doorgeven|opgeven|verzetten|verzet'
+    r'|gewijzigd|aangepast|veranderd|verplaatst|later|eerder)'
+    r'|(ander|andere|nieuw|nieuwe)\s+(afleveradres|bezorgadres|adres|leverdatum|leverdag)'
+    r'|toevoegen\s+aan\s+(mijn|de)\s+(bestelling|order)'
+    r'|bijbestellen|bij\s+mijn\s+bestelling\s+voegen'
+    r'|annulering|annuleren\b|cancel\s+(my\s+)?order|change\s+my\s+(order|address|delivery)'
+    r'|(add|added)\s+to\s+my\s+order'
+    # Invoice / payment administration (P1-2: sess_SCh48, sess_B9h3CC, sess_nwSmDx)
+    r'|factuur|aanmaning|betalingsherinnering|creditnota|dubbel\s+(afgeschreven|betaald)'
+    r'|btw[- ]?(factuur|bon|nummer|verlegd)|op\s+factuur\s+(bestellen|kopen|betalen)'
+    r'|invoice|dunning\s+notice',
+    re.IGNORECASE,
+)
+
+# Situations that need a human by definition. Deliberately phrased as the concrete
+# sentences customers actually used, not as broad topic words: "hoe werkt
+# retourneren?" is a knowledge-base question, "de zakken kwamen kapot aan" is not.
+#
+# Every pattern below was checked against the real messages in the 2026-07-29
+# export, not against invented phrasings — the first draft missed most of them
+# ("er zat te weinig aarde in voor wat ik besteld heb", "Dat staat wel op de zak").
+# Windows are character-based (`[^.?!]{0,40}`) because customers put three or four
+# words between the noun and the verb.
+ESCALATE_TOPIC_RE = re.compile(
+    # Manco / partial delivery — sess_Q7lJWI, sess_HLzFUh, sess_akcz2, sess_07xNFB
+    r'te\s+weinig[^.?!]{0,40}(geleverd|ontvangen|gekregen|bezorgd|besteld|inzat|in\s+gezeten)'
+    r'|(maar|slechts)\s+\d+\s+(van\s+de\s+|zakken|bigbags?|big\s+bags?|pallets?|kuub|m3)'
+    r'|manco|halve\s+(levering|bestelling)'
+    r'|helft\s+(\w+\s+){0,2}(geleverd|ontvangen|bezorgd|binnen)'
+    r'|niet\s+alles\s+(geleverd|ontvangen|gekregen|bezorgd)'
+    r'|(zakken|bigbags?|big\s+bags?|pallets?|deel\s+van\s+de\s+(bestelling|levering))'
+    r'\s+(\w+\s+){0,3}(ontbreek|ontbreken|ontbreekt|mist|missen|kwijt)'
+    # Damage on arrival — the concrete complaint, not the return policy
+    r'|(beschadigd|kapot|gescheurd|lek|open)\s+(aangekomen|geleverd|ontvangen|bezorgd)'
+    r'|(zakken|bigbags?|big\s+bags?|pallet)\s+(\w+\s+){0,3}(kapot|beschadigd|gescheurd|open)'
+    # Delivery overdue — sess_YUdjVS, sess_rU3Vj0, sess_zW4N
+    r'|(wacht|wachten|wachten\s+nu)\s+(al\s+)?\d+\s+(dagen|weken)'
+    r'|al\s+\d+\s+(dagen|weken)\s+(geen|niet|aan\s+het\s+wachten)'
+    r'|(nog\s+steeds|inmiddels|nu\s+al)\s+(niet|geen)\s+(geleverd|ontvangen|bezorgd|binnen)'
+    r'|(veel\s+)?te\s+laat\s+(geleverd|bezorgd|binnen)|langer\s+dan\s+(verwacht|beloofd|aangegeven)'
+    # Price mismatch site vs cart — sess_GiDjnx ("op internet bied je 1m3 voor
+    # € 174,90 aan en als je hem in het winkelwagendje hebt, betaal je € 229,95")
+    r'|prijs\s+(\w+\s+){0,3}(klopt\s+niet|anders|hoger|lager|verschilt)'
+    r'|(andere|ander|hogere|hoger)\s+prijs'
+    r'|winkelwagen\w*[^.?!]{0,60}(betaal|prijs|€|euro)'
+    r'|prijsverschil|boel\s+belazer'
+    # Quote / bulk beyond the webshop ladder — sess_en-gDo, sess_Lv59sQ, sess_2qw1YT.
+    # Deliberately NOT "beste prijs": asking for a discount has a policy answer
+    # ("wij geven geen extra korting"), so escalating that only wastes everyone's time.
+    r'|offerte|prijsopgave|projectprijs|staffel|zakelijk\s+(bestellen|order|account|afnemen)|b2b'
+    r'|wie\s+kan\s+(die|deze|dat|mij)\s+(info|informatie|vertellen|helpen|geven)'
+    # Phone unreachable / promised callback that never came — sess_8K0j5, sess_8Qchs,
+    # sess_SCh48, sess_LHvfGM
+    r'|(niemand|niet)\s+(neemt\s+op|opgenomen|bereikbaar|te\s+bereiken)'
+    r'|telefonisch\s+niet\s+bereikbaar|krijg\s+(niemand|geen\s+(gehoor|contact))'
+    r'|telefoon(nummer)?[^.?!]{0,20}(doet\s+het\s+niet|werkt\s+niet|niet)'
+    r'|(gaat|ging)\s+(1|1x|een|één)\s*(x|keer|maal)?\s*over[^.?!]{0,30}verbroken'
+    r'|(zou|zouden)[^.?!]{0,30}terug(ge)?beld|niet\s+terug(ge)?beld'
+    r'|wachttijd[^.?!]{0,20}(te\s+lang|lang)'
+    # Webshop broken — sess_MI7d, sess_nX5s15, sess_B9h3CC
+    r'|(webshop|website|site|winkelwagen|bestelknop|checkout|betaling|ideal)'
+    r'\s+(\w+\s+){0,2}(werkt\s+niet|doet\s+niets|loopt\s+vast|hapert|geeft\s+een\s+(fout|error))'
+    r'|(gaat|loopt|lukt)\s+niet\s+(goed\s+)?(op|in)\s+(de\s+)?(website|webshop|site)'
+    r'|fout\s+op\s+(de\s+)?(website|webshop|site)'
+    r'|(nog\s+)?geen\s+(bevestiging|bevestigingsmail|orderbevestiging)'
+    r'|foutmelding|error\s+(bij|tijdens)|kan\s+niet\s+afrekenen|lukt\s+niet\s+(om\s+)?te\s+bestellen'
+    # The packaging contradicts the bot — sess_TDOgT58, sess_epXnDes, sess_PL0j.
+    # boomschors.nl/hergebruik is printed on the bigbags but returns a 404, so any
+    # mention of it needs a human until the page exists.
+    r'|(staat|stond)[^.?!]{0,30}op\s+(de\s+)?(zijkant\s+van\s+de\s+)?(big\s?bag|zak|verpakking|doos)'
+    r'|op\s+de\s+(big\s?bag|zak|verpakking)[^.?!]{0,25}staat'
+    r'|boomschors\.nl/hergebruik|/hergebruik'
+    # English equivalents
+    r'|(short|missing|damaged|broken)\s+(delivery|items?|bags?)'
+    r'|received\s+(only|just)\s+\d+|still\s+(not|haven.t)\s+(received|arrived)'
+    r'|waiting\s+(for\s+)?\d+\s+(days|weeks)|quote\s+request|request\s+a\s+quote',
+    re.IGNORECASE,
+)
+
+# BS-codes are order/product references from the customer's confirmation mail. The
+# knowledge base contains none of them, so RAG could only ever invent a description
+# ("BS7950 is een van onze boomschorsproducten" — sess_i2lToQ, sess_acsd2, sess_YFGnM).
+BS_ORDER_REF_RE = re.compile(r'\bBS\s?\d{3,6}\b', re.IGNORECASE)
+
+# A callback number the customer volunteers, e.g. after the handoff (sess_LHvfGM).
+PHONE_NUMBER_RE = re.compile(r'\b(?:\+31|0)[\s-]?\d(?:[\s-]?\d){7,10}\b')
+
 # Stock / product availability intent patterns
 STOCK_INTENT_RE = re.compile(
     # Dutch
@@ -508,6 +621,44 @@ PRODUCT_NAME_EXTRACT_RE = re.compile(
     r'|available|in\s+stock|out\s+of\s+stock|te\s+koop))?$',
     re.IGNORECASE,
 )
+
+
+def classify_intent(message: str) -> str:
+    """Return one routing label for a fresh customer message.
+
+    Routing used to be a sequence of independent regex checks in reading order, so
+    whichever matched first won: "ik wil iemand spreken over mijn bestelling" hit
+    TRACKING_INTENT_RE on "mijn bestelling" and got the shipment-number prompt
+    instead of a colleague, and every order change went the same way.
+
+    Priority: human_request > order_admin > escalate_topic > pre_purchase >
+    return_payment > tracking > stock > rag.
+
+    Two ordering decisions worth knowing:
+    - `pre_purchase` sits *below* order_admin but *above* tracking. A customer who
+      has not ordered yet must never be asked for a shipment number, but "kan ik
+      mijn bestelling nog wijzigen?" is an order change even when phrased as a
+      hypothetical.
+    - Frustration is deliberately absent. The caller only escalates on it from the
+      second turn onwards, so it cannot be a property of the message alone.
+    """
+    if HUMAN_ESCALATION_RE.search(message):
+        return 'human_request'
+    if ORDER_ADMIN_RE.search(message) or BS_ORDER_REF_RE.search(message):
+        return 'order_admin'
+    if ESCALATE_TOPIC_RE.search(message):
+        return 'escalate_topic'
+    if PRE_PURCHASE_RE.search(message):
+        return 'pre_purchase'
+    if RETURN_PAYMENT_RE.search(message):
+        # Returns, refunds and complaints: never the tracking flow, but a general
+        # policy question is still answerable from the knowledge base.
+        return 'return_payment'
+    if TRACKING_INTENT_RE.search(message) or HAS_SHIPMENT_NUMBER_RE.search(message):
+        return 'tracking'
+    if STOCK_INTENT_RE.search(message):
+        return 'stock'
+    return 'rag'
 
 
 # Initialize RAG Engine
@@ -732,11 +883,14 @@ _DEAD_END_PATTERN = re.compile(
     r'|call\s+us',
     re.IGNORECASE,
 )
-DEAD_END_LOOP_THRESHOLD = 3
+# Two identical dead ends is already one too many: sess_4nnfvc, sess_H4Ot9 and
+# sess_j5mH all show the customer giving up after the second "neem contact op met
+# de klantenservice". Was 3 (fase 4, chatlog-analyse P1-2).
+DEAD_END_LOOP_THRESHOLD = 2
 
 
 def _detect_dead_end_loop(chat_history: list[dict]) -> bool:
-    """Return True when the bot has redirected to customer service 3 or more times."""
+    """Return True when the bot has hit the customer-service dead end twice or more."""
     count = sum(
         1
         for turn in chat_history
@@ -1061,13 +1215,59 @@ def _handle_chat(request_id: str) -> Response:
             "Is there anything else I can help you with?"
         )
 
-    def _start_handoff(lang: str, question: str) -> str:
-        """Put the session into the handoff flow and return the opening question."""
+    def _start_handoff(
+        lang: str,
+        question: str,
+        opening: str | None = None,
+        reason: str | None = None,
+    ) -> str:
+        """Put the session into the handoff flow and return the opening question.
+
+        `opening` replaces the generic first sentence so the customer hears why a
+        colleague is taking over ("dat kan ik niet zelf wijzigen"). When the name
+        was already collected earlier in this session — a handoff that got
+        interrupted by another question (sess_SJNuc) — skip straight to the email
+        instead of asking for it again.
+
+        Every path into the handoff goes through here (router, frustration gate,
+        flow dead end, __HUMAN_REQUESTED__ from the model), which is why the
+        already-handed-off guard lives here and not at the call sites: sess_epXnDes
+        got "Wat is je naam?" four times after the ticket had already been sent.
+        """
+        if state_data.get('handoff_done'):
+            return (
+                "Je bericht staat al bij een collega — die neemt zo snel mogelijk "
+                "contact met je op via e-mail. Wil je er niet op wachten? "
+                "Bel ons dan via **0342 – 784 000**."
+                if lang == 'nl' else
+                "Your message is already with a colleague — they'll get in touch by "
+                "email as soon as possible. Don't want to wait? "
+                "Call us at **0342 – 784 000**."
+            )
+
         _clear_guided_flows()
-        state_data['state'] = 'awaiting_name'
         state_data['question'] = question
         state_data['language'] = lang
+        if reason:
+            state_data['escalation_reason'] = reason
+
+        known_name = state_data.get('name')
+        if known_name:
+            state_data['state'] = 'awaiting_email'
+            save_session_state(session_id, state_data)
+            return (
+                f"Ik pak dit op met een collega, {known_name}. Wat is je e-mailadres?"
+                if lang == 'nl' else
+                f"I'll pass this to a colleague, {known_name}. What's your email address?"
+            )
+
+        state_data['state'] = 'awaiting_name'
         save_session_state(session_id, state_data)
+        if opening:
+            return (
+                f"{opening} Wat is je naam?" if lang == 'nl'
+                else f"{opening} What's your name?"
+            )
         return (
             "Natuurlijk! Ik breng je graag in contact met een collega. Wat is je naam?"
             if lang == 'nl' else
@@ -1088,6 +1288,15 @@ def _handle_chat(request_id: str) -> Response:
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
 
+    def _pause_handoff() -> None:
+        """Handoff interrupted by another question: answer that question, but keep
+        the name and email already given. The flow used to be wiped entirely, so it
+        silently vanished and started over later (sess_SJNuc)."""
+        state_data['state'] = 'inactive'
+        state_data['chat_history'] = chat_history
+        state_data.pop('question', None)
+        save_session_state(session_id, state_data)
+
     def _finish_escalation(name: str, email: str, lang: str) -> Response:
         """Send the handoff to a human and reset the session. Shared by both paths
         into the handoff (name→email, and email-given-as-name)."""
@@ -1102,11 +1311,15 @@ def _handle_chat(request_id: str) -> Response:
             result = None
 
         # Reset state and clear history after escalation. `handoff_done` survives so a
-        # follow-up question doesn't restart the whole name/email flow.
+        # follow-up question doesn't restart the whole name/email flow, and the name and
+        # email survive so a phone number sent afterwards can be forwarded with them
+        # (sess_LHvfGM).
         save_session_state(session_id, {
             'state': 'inactive',
             'chat_history': [],
             'handoff_done': True,
+            'name': name,
+            'email': email,
         })
 
         if result:
@@ -1125,6 +1338,23 @@ def _handle_chat(request_id: str) -> Response:
                     "I'm sorry, something went wrong sending your message. Please contact us directly.")
         _log_chat_message(session_id, request_id, user_message, resp)
         return jsonify({"response": resp, "request_id": request_id})
+
+    def _forward_phone_number(lang: str) -> None:
+        """Send a follow-up escalation carrying a phone number the customer gave
+        after the handoff was already completed (sess_LHvfGM: the number went
+        nowhere). Guarded by `phone_forwarded` so it happens at most once."""
+        name = state_data.get('name', 'Unknown')
+        email = state_data.get('email', '')
+        note = f"Klant stuurde na de doorzetting een telefoonnummer na: {user_message}"
+        try:
+            if ESCALATION_METHOD == "zendesk":
+                escalation_client.create_ticket(name, email, note, chat_history)
+            else:
+                escalation_client.send_email_async(name, email, note, chat_history)
+        except Exception as exc:
+            logger.error("Forwarding phone number failed: %s", exc)
+        state_data['phone_forwarded'] = True
+        save_session_state(session_id, state_data)
 
     def _flow_dead_end(lang: str, attempts_key: str = 'flow_attempts') -> str | None:
         """Offer a human after two failed attempts in the same flow.
@@ -1181,9 +1411,9 @@ def _handle_chat(request_id: str) -> Response:
             return jsonify({"response": resp, "request_id": request_id})
 
         elif intent == 'new_question':
-            # User is asking something else - cancel ticket flow and process as RAG
-            state_data = {'state': 'inactive', 'chat_history': chat_history}
-            save_session_state(session_id, state_data)
+            # User is asking something else — answer it, but keep the name/email
+            # collected so far so a later handoff doesn't start from scratch.
+            _pause_handoff()
             # Fall through to RAG processing below (don't return here)
 
         else:  # 'giving_name'
@@ -1251,9 +1481,8 @@ def _handle_chat(request_id: str) -> Response:
                 return jsonify({"response": resp, "request_id": request_id})
 
             elif intent == 'new_question':
-                # User asking something else - cancel and process as RAG
-                state_data = {'state': 'inactive', 'chat_history': chat_history}
-                save_session_state(session_id, state_data)
+                # User asking something else — answer it, but keep what we have.
+                _pause_handoff()
                 # Fall through to RAG processing below
 
             else:
@@ -1619,13 +1848,66 @@ def _handle_chat(request_id: str) -> Response:
             _log_chat_message(session_id, request_id, user_message, response_text)
             return jsonify({"response": response_text, "request_id": request_id})
 
+    # -------------------------------------------------------------------------
+    # INTENT ROUTER (fase 4) — one decision with a fixed priority, taken before
+    # any of the flows below. Everything that needs a human returns from here, so
+    # the tracking / Shopify / stock blocks are only reached for the intents they
+    # actually own.
+    # -------------------------------------------------------------------------
+    intent = classify_intent(user_message)
+    logger.info("[%s] Intent classified as '%s'", request_id, intent)
+
+    # A callback number the customer sends after the handoff was completed: forward it
+    # to the same colleague instead of letting RAG answer it (sess_LHvfGM — the number
+    # went nowhere). Independent of intent: "Bel me even op 06-…" is not an escalation
+    # request, it is an addendum to one.
+    if (
+        state_data.get('handoff_done')
+        and not state_data.get('phone_forwarded')
+        and state_data.get('email')
+        and PHONE_NUMBER_RE.search(user_message)
+    ):
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+        _forward_phone_number(detected_lang)
+        response_text = (
+            "Ik heb je telefoonnummer doorgegeven aan de collega die je bericht oppakt. 👍"
+            if detected_lang == 'nl' else
+            "I've passed your phone number on to the colleague handling your message. 👍"
+        )
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        return jsonify({"response": response_text, "request_id": request_id})
+
+    if intent in ('human_request', 'order_admin', 'escalate_topic'):
+        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
+
+        if intent == 'order_admin':
+            opening = (
+                "Een bestelling wijzigen of aanvullen kan ik zelf niet — dat doet een collega voor je."
+                if detected_lang == 'nl' else
+                "I can't change or add to an order myself — a colleague will do that for you."
+            )
+        elif intent == 'escalate_topic':
+            opening = (
+                "Dit wil ik goed voor je geregeld hebben, dus ik zet het door naar een collega."
+                if detected_lang == 'nl' else
+                "I want this handled properly for you, so I'm passing it to a colleague."
+            )
+        else:
+            opening = None
+
+        response_text = _start_handoff(
+            detected_lang, user_message, opening=opening, reason=intent
+        )
+        _log_chat_message(session_id, request_id, user_message, response_text)
+        return jsonify({"response": response_text, "request_id": request_id})
+
     # Detect order number mentioned directly in the message
     # Supports: order, bestelling, bestellingnummer, zending, zendingnummer
     # Even when the user already mentions their order number we still require
     # the Exact 200 pre-verification step before revealing shipment information.
     order_match = re.search(r'(?:order|bestelling(?:nummer)?|zending(?:nummer)?)\s*#?\s*(\d+)', user_message.lower())
 
-    if order_match:
+    if order_match and intent not in ('pre_purchase', 'return_payment'):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
         state_data['pending_shopify_order_number'] = order_match.group(1)
@@ -1644,17 +1926,10 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
-    # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?")
-    # Skip WISMO for pre-purchase / hypothetical questions — let RAG answer instead.
-    # Also skip when the message is about returns, refunds, or complaints — those need
-    # customer service, not a shipment number lookup.
-    if (
-        not PRE_PURCHASE_RE.search(user_message)
-        and not RETURN_PAYMENT_RE.search(user_message)
-        and (
-            TRACKING_INTENT_RE.search(user_message) or HAS_SHIPMENT_NUMBER_RE.search(user_message)
-        )
-    ):
+    # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?").
+    # classify_intent has already ruled out pre-purchase questions, returns/refunds,
+    # order changes and human requests, so no extra guards are needed here.
+    if intent == 'tracking':
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
         state_data['awaiting_order_number'] = True
@@ -1719,9 +1994,7 @@ def _handle_chat(request_id: str) -> Response:
     # STOCK LOOKUP step 1: detect product availability intent inline.
     # Only enter the flow when Shopify is configured (or mocks are on) — otherwise
     # the question falls through to RAG instead of dead-ending in "can't check stock".
-    if (not PRE_PURCHASE_RE.search(user_message)
-            and STOCK_INTENT_RE.search(user_message)
-            and _stock_lookup_enabled()):
+    if intent == 'stock' and _stock_lookup_enabled():
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
 
@@ -1767,29 +2040,8 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, resp)
         return jsonify({"response": resp, "request_id": request_id})
 
-    # Detect explicit human escalation request (pre-RAG, deterministic)
-    if HUMAN_ESCALATION_RE.search(user_message):
-        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-
-        # Already handed off in this session: confirm it instead of asking for the
-        # name and email all over again (a customer once got "Wat is je naam?" four
-        # times in a row after the ticket had already been sent).
-        if state_data.get('handoff_done'):
-            response_text = (
-                "Je bericht staat al bij een collega — die neemt zo snel mogelijk "
-                "contact met je op via e-mail. Wil je er niet op wachten? "
-                "Bel ons dan via **0342 – 784 000**."
-                if detected_lang == 'nl' else
-                "Your message is already with a colleague — they'll get in touch by "
-                "email as soon as possible. Don't want to wait? "
-                "Call us at **0342 – 784 000**."
-            )
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
-
-        response_text = _start_handoff(detected_lang, user_message)
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
+    # Human escalation requests, order changes and the escalation catalogue are all
+    # handled by the intent router above, before the tracking and stock flows.
 
     # FRUSTRATION GATE: auto-escalate on detected distress or dead-end loop
     user_turns_so_far = sum(1 for t in chat_history if t.get("role") == "user")
@@ -1862,21 +2114,9 @@ def _handle_chat(request_id: str) -> Response:
 
     # Check for Human Contact Request - user explicitly wants to speak with someone
     if "__HUMAN_REQUESTED__" in response_text:
-        state_data['state'] = 'awaiting_name'
-        state_data['question'] = user_message
-
-        if detected_lang == 'nl':
-            response_text = (
-                "Natuurlijk! Ik breng je graag in contact met een collega. "
-                "Wat is je naam?"
-            )
-        else:
-            response_text = (
-                "Of course! I'd be happy to connect you with a colleague. "
-                "What's your name?"
-            )
-
-        save_session_state(session_id, state_data)
+        # Route through _start_handoff so the model-initiated handoff gets the same
+        # guards as every other path: already handed off, and name already known.
+        response_text = _start_handoff(detected_lang, user_message, reason='llm_request')
 
     # Check for Unknown Signal - generate helpful response instead of immediate handoff
     elif "__UNKNOWN__" in response_text:
