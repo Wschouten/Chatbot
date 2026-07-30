@@ -169,32 +169,51 @@ falls through to RAG instead of dead-ending. Both features reactivate themselves
 the token lands. Background:
 [improvement-plan/features/60-wismo-shopify-direct-api.md](improvement-plan/features/60-wismo-shopify-direct-api.md).
 
-## Current work: chatlog-driven improvements
+## Chatlog-driven improvements — all five phases done
 
 An analysis of 257 production conversations (2026-04-22 → 2026-07-29) produced a
 five-phase plan: [improvement-plan/CHATLOG-ANALYSE-2026-07-29.md](improvement-plan/CHATLOG-ANALYSE-2026-07-29.md).
 It records the findings with real transcripts, the session ids, and the cause of each as
-`file:line` — read it before touching routing, the system prompt or the KB.
+`file:line` — read it before touching routing, the system prompt or the KB. Each phase
+section now also records what its production verification found.
 
-- **Fase 1 (escape hatch, input validation) — done, deployed, verified 2026-07-29.**
-- **Fase 2 (knowledge base) — done, deployed, verified 2026-07-29.** Business-policy
-  answers that fed into it: [improvement-plan/OPENSTAANDE-VRAGEN-KB.md](improvement-plan/OPENSTAANDE-VRAGEN-KB.md).
-- **Fase 3 (prompt hardening) — open.** Fabricated actions ("26 mei heb ik genoteerd"),
-  the `'Zoals ik eerder noemde'` phrase the prompt itself prescribes, internal system
-  language reaching customers ("staat niet in de context"), yes/no misalignment.
-- **Fase 4 (intent router + escalation catalogue) — open.** The largest change; own PR.
-- **Fase 5 (output sanitizer + arithmetic helper) — open.** Language flips, foreign-script
-  characters mid-sentence, one confirmed volume miscalculation.
+All five are deployed and verified against production (fase 1–2 on 2026-07-29, fase 3–5
+on 2026-07-30). Test suite went from 133 to 232.
 
-Two constraints learned the hard way while doing Fase 2, both still true:
+| Fase | What | Where |
+|---|---|---|
+| 1 | Escape hatch out of every guided flow, shipment-number validation | `app.py` |
+| 2 | KB cleanup, re-indexing on `content_hash` | `knowledge_base/`, `rag_engine.py` |
+| 3 | Prompt hardening (7 rules) | `rag_engine.py`, before/after in [improvement-plan/rag/fase3-before-after.md](improvement-plan/rag/fase3-before-after.md) |
+| 4 | `classify_intent` + escalation catalogue | `app.py` |
+| 5 | Output gate, `volume_calc.py`, pasted product URLs | `rag_engine.py`, `volume_calc.py` |
 
-- **Escalation cannot be forced from the KB.** The prompt explicitly forbids the bot from
-  sending `__HUMAN_REQUESTED__` on its own judgement, so a KB file saying "refer to a
-  colleague" has no effect when another KB file answers the same question substantively —
-  the bot picks the substantive answer. The working pattern is: allow one factual answer,
-  put the boundary at the follow-up, and say so in *every* file touching the topic.
-  Deterministic escalation is Fase 4 work.
+Known leftovers, all deliberate and small: a policy question about the delivery date
+escalates unnecessarily, one session escapes the catalogue through a typo ("niet gied op
+de website"), and the KB has no dimensions for the solid plastic posts, so the "7 mm"
+question still cannot be answered.
+
+### What this taught, and is still true
+
+- **Verify against the real export, not against reconstructed sentences.** The first
+  version of the fase-4 catalogue was written from this repo's own summaries and missed
+  most of the actual customer phrasings. Running the classifier over all 803 user
+  messages in `chat-export-2026-07-29.json` found that in minutes; the tests never
+  would have. Same for the fase-5 output gate: 7 of its 10 language flags turned out to
+  be canned `app.py` strings, which the gate cannot see at all.
+- **Prompt work has a ceiling, and it is `app.py`.** Two fase-3 findings could not be
+  fixed by any prompt rule because the message never reached the model — the state
+  machine answered first. If a bad answer never seems to change, check whether the LLM
+  is even involved.
+- **Escalation cannot be forced from the KB.** The prompt forbids the bot from sending
+  `__HUMAN_REQUESTED__` on its own judgement, so a KB file saying "refer to a colleague"
+  has no effect when another KB file answers the same question substantively. Since
+  fase 4 that judgement is deterministic instead: `ORDER_ADMIN_RE` / `ESCALATE_TOPIC_RE`.
 - **A KB contradiction is fixed in the source file, never in the prompt.**
+- **Every prompt rule can overshoot in the other direction.** "Never infer a country from
+  a place name" made the bot withhold Dutch shipping costs entirely; "do not dispute the
+  customer" plus "give the answer again" made it reply "Dat klopt niet; ik heb dat net
+  wel genoemd." Both only showed up when replayed against production, not in the tests.
 
 ## Conventions
 
