@@ -43,6 +43,14 @@ Houtsnippers worden gemaakt door de volledige boom te versnipperen. Boomschors b
 - Boomschors is doorgaans duurzamer bij langdurige bodembedekking  
 De keuze is vooral afhankelijk van uitstraling en gewenste levensduur.
 
+## Productnamen in de webshop
+Naast de kleurvarianten verkopen wij houtsnippers onder een eigen productnaam:
+- **Douglas Premium | Houtsnippers | Big Bag** — leverbaar, staat in de webshop.
+
+Douglas Premium is dus een gewoon leverbaar artikel. Alleen de oudere variant
+"Douglas Excellent" (artikel HSDE-2) is uit het assortiment; zie
+niet_leverbare_producten.txt. Verwar die twee namen niet met elkaar.
+
 ## Kleuren
 - Natuurlijke (lichtbruine) houtsnippers
 - Gekleurde varianten:

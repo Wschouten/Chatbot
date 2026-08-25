@@ -79,3 +79,26 @@ def test_support_hours_match_the_canned_phone_reply():
                 f"{label} canned phone reply says {t}, which openingstijden.txt "
                 f"does not mention. Keep app.SUPPORT_HOURS_* and the KB file in sync."
             )
+
+
+def test_douglas_premium_is_not_confused_with_the_discontinued_excellent():
+    """Only "Douglas Excellent" (HSDE-2) is discontinued; "Douglas Premium" is not.
+
+    The KB named only Excellent, so retrieval matched a customer asking about
+    "Douglas Premium | Houtsnippers | Big Bag" against the discontinued-products
+    file and told a buying customer we no longer sell it (sess_jLgTn7 replay,
+    2026-08-25). Both files must keep naming Premium as available.
+    """
+    with open(os.path.join(KB_DIR, "Houtsnippers.txt"), "r", encoding="utf-8") as f:
+        snippers = f.read()
+    with open(os.path.join(KB_DIR, "niet_leverbare_producten.txt"), "r", encoding="utf-8") as f:
+        unavailable = f.read()
+
+    assert "Douglas Premium" in snippers, (
+        "Houtsnippers.txt must name Douglas Premium, or the only KB hit for "
+        "'Douglas' is the discontinued Excellent"
+    )
+    assert "Douglas Premium" in unavailable, (
+        "niet_leverbare_producten.txt must say Douglas Premium is a different, "
+        "still-available product next to the Excellent entry"
+    )
