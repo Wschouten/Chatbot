@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 231 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 241 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -203,6 +203,21 @@ escalates unnecessarily, one session escapes the catalogue through a typo ("niet
 de website"), and the KB has no dimensions for the solid plastic posts, so the "7 mm"
 question still cannot be answered.
 
+### Follow-up: sess_jLgTn7 (2026-08-25, verified in production)
+
+One conversation from 2026-08-24 — a customer asking from what time we answer the phone,
+answered three times without ever naming the hours — produced three fixes, each a
+different layer:
+
+| Commit | Layer | What |
+|---|---|---|
+| `7424d47` | `app.py` | The canned phone reply names the hours (`SUPPORT_HOURS_NL`/`_EN`), and every canned early return records its turn via `_remember_turn` |
+| `90c9beb` | `knowledge_base/` | "Douglas Premium" was nowhere in the KB, so retrieval matched it against the discontinued "Douglas Excellent" and told a buying customer we no longer sell it |
+| `4f2a839` | `rag_engine.py` | The bot now tutoyeert consistently, even when the customer writes "u" |
+
+Still open from this session: the Douglas Premium big bag has no fraction, price or
+volume in the KB, so "hoeveel zit er in?" for that article cannot be answered yet.
+
 ### What this taught, and is still true
 
 - **Verify against the real export, not against reconstructed sentences.** The first
@@ -220,6 +235,16 @@ question still cannot be answered.
   has no effect when another KB file answers the same question substantively. Since
   fase 4 that judgement is deterministic instead: `ORDER_ADMIN_RE` / `ESCALATE_TOPIC_RE`.
 - **A KB contradiction is fixed in the source file, never in the prompt.**
+- **A prompt's examples outweigh its adjectives.** The persona said "vriendelijk,
+  informeel", but the one sample sentence in the whole Dutch prompt read "Bedoelt *u*
+  misschien de rozenkever?" — and the bot drifted to the formal form mid-conversation
+  while every canned `app.py` string tutoyeerde. Adding a rule was half the fix; the
+  other half was correcting the example. `test_fase3_prompt_hardening.py` now fails on
+  any `u`/`uw` anywhere in the Dutch prompt, not just on a missing rule.
+- **A near-miss product name is worse than an unknown one.** A KB that names only the
+  discontinued variant makes retrieval confidently deny a product that is on sale
+  ("Douglas Premium" matched "Douglas Excellent — uit het assortiment"). When a
+  discontinued product has a still-available sibling, name both, in both files.
 - **Every prompt rule can overshoot in the other direction.** "Never infer a country from
   a place name" made the bot withhold Dutch shipping costs entirely; "do not dispute the
   customer" plus "give the answer again" made it reply "Dat klopt niet; ik heb dat net
