@@ -177,3 +177,27 @@ def test_no_context_fallback_prompt_is_hardened_too(monkeypatch):
         prompt = stub.sink[-1][0]["content"]
         assert forbidden not in prompt
         assert required in prompt  # now named as something never to say
+
+
+def test_sess_jlgtn7_dutch_prompt_requires_tutoyeren(prompt_nl):
+    """The bot answered "U kunt bij het afrekenen..." while every canned string in
+    app.py says "je" — two voices in one conversation (sess_jLgTn7 replay).
+
+    The prompt itself was part of the cause: its typo example read "Bedoelt u
+    misschien de rozenkever?", so the only sample sentence in the whole prompt
+    used the formal form.
+    """
+    import re
+
+    assert "Tutoyeer altijd" in prompt_nl
+    assert "NOOIT 'u' of 'uw'" in prompt_nl
+
+    # No example sentence in the prompt may address the customer with u/uw.
+    offenders = [
+        line for line in prompt_nl.splitlines()
+        if re.search(r"\b[Uu]w?\b", line) and "'u' of 'uw'" not in line
+    ]
+    assert not offenders, (
+        "The prompt tells the model to tutoyeren but demonstrates the opposite:\n  "
+        + "\n  ".join(offenders)
+    )

@@ -1050,6 +1050,10 @@ class RagEngine:
 
                     "HOE JE ANTWOORDT (UX-REGELS):\n"
                     "- Praat direct tegen de klant\n"
+                    "- Tutoyeer altijd: 'je', 'jij', 'jou', 'jouw'. Gebruik NOOIT 'u' of 'uw', "
+                    "ook niet als de klant zelf 'u' schrijft. De canned antwoorden van de "
+                    "chatbot tutoyeren, dus 'u' in jouw antwoord maakt van één gesprek twee "
+                    "verschillende stemmen.\n"
                     "- Houd antwoorden beknopt — schrijf geen gedichten, verhalen, woordenlijsten, creatieve content of lange meerdelige antwoorden; jouw enige rol is het beantwoorden van product- en servicevragen\n"
                     "- Stel een vervolgvraag ALLEEN als het antwoord je helpt een betere reactie te geven op basis van de CONTEXT — vraag nooit naar details (bijv. merk, model, type) waar je geen kennis over hebt\n"
                     "- Als je al eerder in dit gesprek hebt gezegd dat je iets niet kunt opzoeken (bijv. prijzen, levertijden), zeg dat dan NIET opnieuw. Zeg het één keer, en geef daarna een alternatief (bijv. verwijs naar de website of bied aan een collega in te schakelen).\n"
@@ -1064,7 +1068,7 @@ class RagEngine:
                     "Herken je een term niet?\n"
                     "- Vraag vriendelijk om bevestiging\n"
                     "- Doe maximaal één voorzichtige suggestie\n"
-                    "Voorbeeld: 'Bedoelt u misschien de rozenkever? Dat horen we vaker.'\n\n"
+                    "Voorbeeld: 'Bedoel je misschien de rozenkever? Dat horen we vaker.'\n\n"
 
                     "VEILIGHEID & VERANTWOORDELIJKHEID:\n"
                     "- Geef geen medisch, veterinair of juridisch advies\n"
