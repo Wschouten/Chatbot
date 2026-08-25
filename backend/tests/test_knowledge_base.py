@@ -55,3 +55,27 @@ def test_phone_number_is_consistent():
         "Wrong customer service phone number in the knowledge base "
         "(expected 0342 – 784 000):\n  " + "\n  ".join(wrong)
     )
+
+
+def test_support_hours_match_the_canned_phone_reply():
+    """The hours live in two places and must agree.
+
+    `openingstijden.txt` serves questions phrased without a phone word; the canned
+    reply in `app.py` serves everything PHONE_CONTACT_RE catches, which never
+    reaches the RAG at all. Editing one and not the other is how sess_jLgTn7 would
+    come back as a *wrong* answer instead of a missing one.
+    """
+    import app
+
+    path = os.path.join(KB_DIR, "openingstijden.txt")
+    with open(path, "r", encoding="utf-8") as f:
+        kb = f.read()
+
+    for label, canned in (("NL", app.SUPPORT_HOURS_NL), ("EN", app.SUPPORT_HOURS_EN)):
+        times = re.findall(r'\b\d{1,2}:\d{2}\b', canned)
+        assert times, f"{label} support hours name no time: {canned!r}"
+        for t in times:
+            assert t in kb, (
+                f"{label} canned phone reply says {t}, which openingstijden.txt "
+                f"does not mention. Keep app.SUPPORT_HOURS_* and the KB file in sync."
+            )

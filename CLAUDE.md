@@ -138,6 +138,16 @@ Every item below has broken production at least once.
   conversation (seven English messages to a Dutch customer). `guess_language` corrects
   the stored value per message; keep any new canned copy behind that, not behind a
   hard-coded language.
+- **A shortcut that returns before the RAG must answer completely — and record its
+  turn.** `PHONE_CONTACT_RE` returns a canned reply, so no question *about* the phone
+  ever reaches the knowledge base: "vanaf hoe laat kan ik telefonisch contact opnemen?"
+  got the bare number twice in a row (`sess_jLgTn7`, 2026-08-24). The hours now live in
+  `SUPPORT_HOURS_NL`/`_EN` next to the regex, and `tests/test_knowledge_base.py` asserts
+  they still match `knowledge_base/openingstijden.txt`. The same block also returned
+  without appending to `state_data['chat_history']`, so the *next* message was
+  reformulated against a history that ended two turns earlier — "tussen welke tijden kan
+  dat?" was rewritten against the delivery question and answered with a delivery time.
+  Every canned early return goes through `_remember_turn`; a new one must too.
 - **Timestamps.** Chat logs and data retention are UTC-aware; session and tracking state
   stay naive (they are only ever compared against each other). Do not mix the two
   halfway through a flow.

@@ -461,6 +461,18 @@ PHONE_CONTACT_RE = re.compile(
     r'|\b(phone|call\s+me|telephone|ring\s+me|call\s+you|over\s+the\s+phone|by\s+phone)\b',
     re.IGNORECASE
 )
+
+# Customer-service contact details for the canned phone reply.
+#
+# The hours belong here, not only in the knowledge base: PHONE_CONTACT_RE returns
+# before the RAG runs, so *every* question that mentions the phone gets this string
+# and nothing else. Without the hours the bot answered "vanaf hoe laat kan ik
+# telefonisch contact opnemen?" with just the number, twice in a row (sess_jLgTn7).
+# knowledge_base/openingstijden.txt holds the same hours for questions phrased
+# without a phone word; tests/test_knowledge_base.py asserts the two agree.
+SUPPORT_PHONE = "0342 – 784 000"
+SUPPORT_HOURS_NL = "maandag t/m vrijdag van 09:00 tot 17:00"
+SUPPORT_HOURS_EN = "Monday to Friday from 09:00 to 17:00"
 FRUSTRATION_RE = re.compile(
     r'\b(ik baal\b|behoorlijk balen|heel erg balen'
     r'|dit is belachelijk|absoluut belachelijk|volkomen belachelijk'
@@ -1218,13 +1230,29 @@ def _handle_chat(request_id: str) -> Response:
             state_data.pop(key, None)
 
     def _phone_response(lang: str) -> str:
+        """The one canned phone answer. Always names the hours — see SUPPORT_HOURS_NL."""
         return (
-            "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
-            "Kan ik je nog ergens anders mee helpen?"
+            f"Je kunt ons telefonisch bereiken via **{SUPPORT_PHONE}**, "
+            f"{SUPPORT_HOURS_NL}. Kan ik je nog ergens anders mee helpen?"
             if lang == 'nl' else
-            "You can reach us by phone at **0342 – 784 000**. "
-            "Is there anything else I can help you with?"
+            f"You can reach us by phone at **{SUPPORT_PHONE}**, "
+            f"{SUPPORT_HOURS_EN}. Is there anything else I can help you with?"
         )
+
+    def _remember_turn(response: str) -> None:
+        """Record a canned reply in the RAG history, then persist the session.
+
+        The shortcut replies used to return without touching
+        state_data['chat_history'], so the turn was invisible to the follow-up
+        reformulation: in sess_jLgTn7 "tussen welke tijden kan dat?" was rewritten
+        against the *delivery-date* question two turns earlier — the phone answer in
+        between had never been stored — and the customer got a delivery answer to a
+        question about opening hours.
+        """
+        chat_history.append({"role": "user", "content": user_message})
+        chat_history.append({"role": "assistant", "content": response})
+        state_data['chat_history'] = chat_history[-10:]
+        save_session_state(session_id, state_data)
 
     def _start_handoff(
         lang: str,
@@ -1289,8 +1317,8 @@ def _handle_chat(request_id: str) -> Response:
         flow_lang = state_data.get('language', 'nl')
         if PHONE_CONTACT_RE.search(user_message):
             _clear_guided_flows()
-            save_session_state(session_id, state_data)
             resp = _phone_response(flow_lang)
+            _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
 
@@ -1396,15 +1424,9 @@ def _handle_chat(request_id: str) -> Response:
     # ---------------------------------------------------------
     if current_state == 'awaiting_name':
         if PHONE_CONTACT_RE.search(user_message):
-            state_data = {'state': 'inactive', 'chat_history': chat_history}
-            save_session_state(session_id, state_data)
-            resp = (
-                "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
-                "Kan ik je nog ergens anders mee helpen?"
-                if user_lang == 'nl' else
-                "You can reach us by phone at **0342 – 784 000**. "
-                "Is there anything else I can help you with?"
-            )
+            state_data = {'state': 'inactive', 'language': user_lang, 'chat_history': chat_history}
+            resp = _phone_response(user_lang)
+            _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
 
@@ -1463,15 +1485,9 @@ def _handle_chat(request_id: str) -> Response:
     # ---------------------------------------------------------
     if current_state == 'awaiting_email':
         if PHONE_CONTACT_RE.search(user_message):
-            state_data = {'state': 'inactive', 'chat_history': chat_history}
-            save_session_state(session_id, state_data)
-            resp = (
-                "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
-                "Kan ik je nog ergens anders mee helpen?"
-                if user_lang == 'nl' else
-                "You can reach us by phone at **0342 – 784 000**. "
-                "Is there anything else I can help you with?"
-            )
+            state_data = {'state': 'inactive', 'language': user_lang, 'chat_history': chat_history}
+            resp = _phone_response(user_lang)
+            _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
 
@@ -2047,16 +2063,13 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
-    # Detect phone contact request — provide number directly, don't start email escalation
+    # Detect phone contact request — provide number and hours directly, don't start
+    # email escalation. This returns before the RAG, so the reply has to be complete
+    # on its own: a question about *when* we answer the phone never reaches the KB.
     if PHONE_CONTACT_RE.search(user_message):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-        resp = (
-            "Je kunt ons telefonisch bereiken via **0342 – 784 000**. "
-            "Kan ik je nog ergens anders mee helpen?"
-            if detected_lang == 'nl' else
-            "You can reach us by phone at **0342 – 784 000**. "
-            "Is there anything else I can help you with?"
-        )
+        resp = _phone_response(detected_lang)
+        _remember_turn(resp)
         _log_chat_message(session_id, request_id, user_message, resp)
         return jsonify({"response": resp, "request_id": request_id})
 

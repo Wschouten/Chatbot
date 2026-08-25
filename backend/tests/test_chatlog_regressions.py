@@ -291,3 +291,95 @@ class TestHandoffDoesNotRestart:
             "The handoff already completed — asking for the name again is the bug"
         )
         assert "collega" in data["response"].lower()
+
+
+# ---------------------------------------------------------------------------
+# sess_jLgTn7 (2026-08-24): "vanaf hoe laat kan ik ook met jullie telefonisch
+# contact opnemen?" was answered with the phone number and nothing else, twice.
+# PHONE_CONTACT_RE returns before the RAG, so the canned reply is the only thing
+# the customer sees — it has to name the hours itself.
+#
+# The same session shows the second half of the bug: the shortcut returned
+# without storing the turn, so the follow-up "tussen welke tijden kan dat?" was
+# reformulated against the delivery question two turns earlier and got a
+# delivery answer.
+# ---------------------------------------------------------------------------
+
+class TestPhoneReplyNamesOpeningHours:
+    def test_sess_jlgtn7_phone_reply_names_the_opening_hours(self):
+        client = _make_client()
+        sid = _make_session_id()
+
+        data = _post(client, "vanaf hoe laat kan ik ook met jullie telefonisch contact opnemen?", sid)
+
+        assert "09:00" in data["response"] and "17:00" in data["response"], (
+            f"A phone question never reaches the KB, so the canned reply must name "
+            f"the hours: {data['response']!r}"
+        )
+
+    def test_sess_jlgtn7_phone_reply_still_names_the_number(self):
+        client = _make_client()
+        sid = _make_session_id()
+
+        data = _post(client, "kan ik jullie bellen?", sid)
+
+        assert "0342" in data["response"]
+
+    def test_sess_jlgtn7_english_phone_reply_names_the_hours(self):
+        import app as flask_app
+
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "inactive", "language": "en", "chat_history": []})
+        flask_app.rag_engine.detect_language = MagicMock(return_value="en")
+        try:
+            data = _post(client, "can I reach you by phone?", sid)
+        finally:
+            flask_app.rag_engine.detect_language = MagicMock(return_value="nl")
+
+        assert "09:00" in data["response"] and "17:00" in data["response"], (
+            f"English customers need the hours too: {data['response']!r}"
+        )
+
+    def test_sess_jlgtn7_phone_turn_is_kept_in_chat_history(self):
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "inactive", "language": "nl", "chat_history": []})
+
+        _post(client, "vanaf hoe laat zijn jullie telefonisch bereikbaar?", sid)
+
+        history = _load_session(sid).get("chat_history", [])
+        roles = [turn.get("role") for turn in history]
+        assert roles[-2:] == ["user", "assistant"], (
+            f"The shortcut must record its turn, or the next follow-up is "
+            f"reformulated against a stale history: {history!r}"
+        )
+        assert "telefonisch" in history[-2]["content"]
+        assert "0342" in history[-1]["content"]
+
+    def test_sess_jlgtn7_phone_escape_from_handoff_also_names_hours_and_stores_turn(self):
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {
+            "state": "awaiting_name",
+            "language": "nl",
+            "question": "Ik wil een medewerker spreken",
+            "chat_history": [],
+        })
+
+        data = _post(client, "ik wil liever telefonisch contact", sid)
+
+        assert "09:00" in data["response"] and "17:00" in data["response"]
+        state = _load_session(sid)
+        assert state.get("state") == "inactive"
+        assert len(state.get("chat_history", [])) == 2
+
+    def test_sess_jlgtn7_phone_escape_from_guided_flow_also_names_hours(self):
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, _tracking_state())
+
+        data = _post(client, "kan ik jullie bellen, en hoe laat kan dat?", sid)
+
+        assert "09:00" in data["response"] and "17:00" in data["response"]
+        assert "verzendnummer" not in data["response"].lower()
