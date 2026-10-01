@@ -67,7 +67,7 @@ Admin auth accepts either an `X-Admin-Key` header (scripts) or a signed HttpOnly
 **Routing happens in one place.** `classify_intent(message)` ([app.py](backend/app.py))
 returns exactly one label per fresh message, in a fixed priority order:
 `human_request > order_admin > escalate_topic > pre_purchase > return_payment >
-tracking > stock > rag`. Everything that needs a human returns before the flows below
+pickup (→ rag) > tracking > stock > rag`. Everything that needs a human returns before the flows below
 are reached. Do not add a competing regex check next to a flow — extend the router,
 or the old failure comes back: routing used to be independent regexes in reading
 order, so "ik wil iemand spreken over mijn bestelling" matched `TRACKING_INTENT_RE`

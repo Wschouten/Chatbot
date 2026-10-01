@@ -394,6 +394,15 @@ RETURN_PAYMENT_RE = re.compile(
     r'|niet\s+tevreden|ontevreden)\b',
     re.IGNORECASE,
 )
+# Picking an order up yourself is a policy question the FAQ answers ("neem vooraf
+# contact op"); a pickup is never shipped, so there is nothing to track. Without
+# this, "kan ik mijn bestelling zelf afhalen?" hit "mijn bestelling" in
+# TRACKING_INTENT_RE and got the shipment-number prompt.
+PICKUP_RE = re.compile(
+    r'\b(afhal\w*|afhaal\w*|ophalen|zelf\s+(komen\s+)?halen|komen\s+halen'
+    r'|pick\s*up|collect\s+(it|my|the))\b',
+    re.IGNORECASE,
+)
 # Order/shipment identifiers. Every pattern REQUIRES digits: a bare word must never
 # be read as an order number. Before, `[A-Za-z0-9]{4,20}` matched any 4-letter word, so
 # "Ik heb nog geen zending" produced "Je bestelnummer (GEEN) heb ik ontvangen".
@@ -647,7 +656,7 @@ def classify_intent(message: str) -> str:
     instead of a colleague, and every order change went the same way.
 
     Priority: human_request > order_admin > escalate_topic > pre_purchase >
-    return_payment > tracking > stock > rag.
+    return_payment > pickup (→ rag) > tracking > stock > rag.
 
     Two ordering decisions worth knowing:
     - `pre_purchase` sits *below* order_admin but *above* tracking. A customer who
@@ -669,6 +678,8 @@ def classify_intent(message: str) -> str:
         # Returns, refunds and complaints: never the tracking flow, but a general
         # policy question is still answerable from the knowledge base.
         return 'return_payment'
+    if PICKUP_RE.search(message):
+        return 'rag'
     if TRACKING_INTENT_RE.search(message) or HAS_SHIPMENT_NUMBER_RE.search(message):
         return 'tracking'
     if STOCK_INTENT_RE.search(message):

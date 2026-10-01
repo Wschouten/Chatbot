@@ -141,6 +141,18 @@ def test_human_request_wins_over_tracking_keywords():
     assert classify_intent("Ik wil een medewerker spreken over mijn bestelling") == 'human_request'
 
 
+@pytest.mark.parametrize("message", [
+    "Kan ik mijn bestelling zelf afhalen? Moet ik dan vooraf iets doen?",
+    "Kan ik mijn bestelling zelf komen halen?",
+    "Wanneer kan ik mijn bestelling ophalen?",
+    "Can I pick up my order myself?",
+])
+def test_rebrand_replay_pickup_question_is_not_tracking(message):
+    """Found replaying production after the rebrand (2026-10-01): "mijn bestelling"
+    sent a pickup question to the shipment-number prompt."""
+    assert classify_intent(message) == 'rag'
+
+
 def test_tracking_still_routes_to_tracking():
     """Guard against the router quietly disabling track & trace."""
     assert classify_intent("Waar is mijn pakket?") == 'tracking'
