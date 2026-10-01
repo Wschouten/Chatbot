@@ -124,7 +124,7 @@ All branding is controlled through environment variables — no code changes nee
 
 | Variable | Description |
 |---|---|
-| `BRAND_NAME` | Company name (e.g., `GroundCoverGroup`) |
+| `BRAND_NAME` | Company name (e.g., `Boomschors.nl`) |
 | `BRAND_ASSISTANT_NAME` | Name shown in the chat widget |
 | `BRAND_PERSONALITY_NL` | Dutch persona prompt for the LLM |
 | `BRAND_PERSONALITY_EN` | English persona prompt for the LLM |

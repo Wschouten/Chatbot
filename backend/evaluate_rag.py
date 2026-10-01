@@ -1,4 +1,4 @@
-"""RAG Evaluation Framework for GroundCover Chatbot.
+"""RAG Evaluation Framework for the Boomschors.nl Chatbot.
 
 This script evaluates the RAG engine's performance across multiple dimensions:
 - Keyword matching accuracy
@@ -361,7 +361,7 @@ Output only valid JSON, nothing else."""
     def run_evaluation(self) -> None:
         """Run the complete evaluation pipeline."""
         print("=" * 70)
-        print("RAG Evaluation Framework - GroundCover Chatbot")
+        print("RAG Evaluation Framework - Boomschors.nl Chatbot")
         print("=" * 70)
         print()
 

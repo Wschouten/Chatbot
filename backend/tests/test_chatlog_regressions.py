@@ -183,7 +183,7 @@ class TestEscapeHatch:
 
         data = _post(client, "ik wil telefonisch contact", sid)
 
-        assert "0342" in data["response"]
+        assert "0516" in data["response"]
         assert not _load_session(sid).get("awaiting_order_number")
 
     def test_frustration_breaks_out_of_tracking(self):
@@ -323,7 +323,7 @@ class TestPhoneReplyNamesOpeningHours:
 
         data = _post(client, "kan ik jullie bellen?", sid)
 
-        assert "0342" in data["response"]
+        assert "0516" in data["response"]
 
     def test_sess_jlgtn7_english_phone_reply_names_the_hours(self):
         import app as flask_app
@@ -355,7 +355,7 @@ class TestPhoneReplyNamesOpeningHours:
             f"reformulated against a stale history: {history!r}"
         )
         assert "telefonisch" in history[-2]["content"]
-        assert "0342" in history[-1]["content"]
+        assert "0516" in history[-1]["content"]
 
     def test_sess_jlgtn7_phone_escape_from_handoff_also_names_hours_and_stores_turn(self):
         client = _make_client()

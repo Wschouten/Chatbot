@@ -12,12 +12,12 @@ class BrandConfig:
     """Brand configuration settings."""
 
     # Core brand identity
-    name: str  # e.g., "GroundCoverGroup"
+    name: str  # e.g., "Boomschors.nl"
     product_line: str  # e.g., "Ecostyle"
-    assistant_name: str  # e.g., "GroundCover"
+    assistant_name: str  # e.g., "Boomschors.nl"
 
     # Topic validation (comma-separated list of relevant topics)
-    relevant_topics: str  # e.g., "tuinieren, Ecostyle, GroundCover, producten"
+    relevant_topics: str  # e.g., "tuinieren, boomschors, producten"
 
     # Welcome messages
     welcome_message_nl: str
@@ -34,9 +34,9 @@ class BrandConfig:
     @classmethod
     def from_env(cls) -> "BrandConfig":
         """Load brand configuration from environment variables."""
-        name = os.environ.get("BRAND_NAME", "GroundCoverGroup")
-        product_line = os.environ.get("BRAND_PRODUCT_LINE", "GroundCoverGroup")
-        assistant_name = os.environ.get("BRAND_ASSISTANT_NAME", "GroundCoverGroup")
+        name = os.environ.get("BRAND_NAME", "Boomschors.nl")
+        product_line = os.environ.get("BRAND_PRODUCT_LINE", "Boomschors.nl")
+        assistant_name = os.environ.get("BRAND_ASSISTANT_NAME", "Boomschors.nl")
 
         # Default relevant topics
         default_topics = f"tuinieren, {product_line}, {name}, producten, gardening, products"

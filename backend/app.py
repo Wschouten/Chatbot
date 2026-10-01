@@ -1,4 +1,4 @@
-"""GroundCoverGroup Chatbot - Flask Application."""
+"""Boomschors.nl Chatbot - Flask Application."""
 import logging
 import os
 import re
@@ -470,7 +470,7 @@ PHONE_CONTACT_RE = re.compile(
 # telefonisch contact opnemen?" with just the number, twice in a row (sess_jLgTn7).
 # knowledge_base/openingstijden.txt holds the same hours for questions phrased
 # without a phone word; tests/test_knowledge_base.py asserts the two agree.
-SUPPORT_PHONE = "0342 – 784 000"
+SUPPORT_PHONE = "0516 – 715 000"
 SUPPORT_HOURS_NL = "maandag t/m vrijdag van 09:00 tot 17:00"
 SUPPORT_HOURS_EN = "Monday to Friday from 09:00 to 17:00"
 FRUSTRATION_RE = re.compile(
@@ -1058,14 +1058,14 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             if lang == "nl":
                 msg = (
                     f"{'😔 ' if use_emojis else ''}Helaas is **{name}** momenteel niet op voorraad.\n"
-                    "Neem contact op via klantenservice@groundcovergroup.nl voor meer informatie."
+                    "Neem contact op via klantenservice@boomschors.nl voor meer informatie."
                 )
                 if price_str:
                     msg += f"\n{'💰 ' if use_emojis else ''}Normale prijs: {price_str}"
             else:
                 msg = (
                     f"{'😔 ' if use_emojis else ''}Unfortunately **{name}** is currently out of stock.\n"
-                    "Please contact us at klantenservice@groundcovergroup.nl for more information."
+                    "Please contact us at klantenservice@boomschors.nl for more information."
                 )
                 if price_str:
                     msg += f"\n{'💰 ' if use_emojis else ''}Regular price: {price_str}"
@@ -1101,24 +1101,24 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             return (
                 f"{'🤔 ' if use_emojis else ''}Ik kan geen product vinden met de naam **{query}**.\n"
                 f"Kijk in onze webshop: {store_url}\n"
-                "Of neem contact op via klantenservice@groundcovergroup.nl."
+                "Of neem contact op via klantenservice@boomschors.nl."
             )
         else:
             return (
                 f"{'🤔 ' if use_emojis else ''}I couldn't find a product called **{query}**.\n"
                 f"Browse our webshop: {store_url}\n"
-                "Or contact us at klantenservice@groundcovergroup.nl."
+                "Or contact us at klantenservice@boomschors.nl."
             )
     else:  # error
         if lang == "nl":
             return (
                 f"{'😕 ' if use_emojis else ''}Het is momenteel niet mogelijk om de voorraad op te vragen.\n"
-                "Probeer het later opnieuw of neem contact op via klantenservice@groundcovergroup.nl."
+                "Probeer het later opnieuw of neem contact op via klantenservice@boomschors.nl."
             )
         else:
             return (
                 f"{'😕 ' if use_emojis else ''}I'm unable to check stock availability right now.\n"
-                "Please try again later or contact us at klantenservice@groundcovergroup.nl."
+                "Please try again later or contact us at klantenservice@boomschors.nl."
             )
 
 
@@ -1277,11 +1277,11 @@ def _handle_chat(request_id: str) -> Response:
             return (
                 "Je bericht staat al bij een collega — die neemt zo snel mogelijk "
                 "contact met je op via e-mail. Wil je er niet op wachten? "
-                "Bel ons dan via **0342 – 784 000**."
+                "Bel ons dan via **0516 – 715 000**."
                 if lang == 'nl' else
                 "Your message is already with a colleague — they'll get in touch by "
                 "email as soon as possible. Don't want to wait? "
-                "Call us at **0342 – 784 000**."
+                "Call us at **0516 – 715 000**."
             )
 
         _clear_guided_flows()
@@ -1693,13 +1693,13 @@ def _handle_chat(request_id: str) -> Response:
                     response_text = (
                         "No problem! Orders are typically delivered within a few working days. "
                         "For the exact delivery time to your area, please check the webshop at checkout "
-                        "or contact us at klantenservice@groundcovergroup.nl."
+                        "or contact us at klantenservice@boomschors.nl."
                     )
                 else:
                     response_text = (
                         "Geen probleem! Bestellingen worden doorgaans binnen enkele werkdagen geleverd. "
                         "Voor de exacte levertijd naar jouw regio, check de webshop bij het afrekenen "
-                        "of neem contact op via klantenservice@groundcovergroup.nl."
+                        "of neem contact op via klantenservice@boomschors.nl."
                     )
             else:
                 response_text = _flow_dead_end(user_lang)
@@ -1829,7 +1829,7 @@ def _handle_chat(request_id: str) -> Response:
                             "Unfortunately, I can't search directly by order number yet. "
                             "You'll find your Track & Trace link in the shipping confirmation email. "
                             "Didn't receive it? Feel free to contact us at "
-                            "klantenservice@groundcovergroup.nl or **0342 – 784 000**."
+                            "klantenservice@boomschors.nl or **0516 – 715 000**."
                         )
                     else:
                         response_text = (
@@ -1837,7 +1837,7 @@ def _handle_chat(request_id: str) -> Response:
                             "Helaas kan ik op dit moment nog niet rechtstreeks op bestelnummer zoeken. "
                             "Je vindt je Track & Trace-link in de verzendbevestigingsmail. "
                             "Heb je die niet ontvangen? Dan helpen we je graag via "
-                            "klantenservice@groundcovergroup.nl of **0342 – 784 000**."
+                            "klantenservice@boomschors.nl of **0516 – 715 000**."
                         )
             else:
                 # Check if user is expressing they don't have the shipment number

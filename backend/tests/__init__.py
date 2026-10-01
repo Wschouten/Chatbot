@@ -1,1 +1,1 @@
-"""Test package for GroundCoverChatbot."""
+"""Test package for the Boomschors.nl chatbot."""

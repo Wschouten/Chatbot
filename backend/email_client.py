@@ -105,12 +105,12 @@ class EmailClient:
         payload = {
             "from": {
                 "email": self.from_email,
-                "name": "GroundCoverGroup Chatbot",
+                "name": "Boomschors.nl Chatbot",
             },
             "to": [
                 {
                     "email": self.to_email,
-                    "name": "GroundCoverGroup Support",
+                    "name": "Boomschors.nl Support",
                 }
             ],
             "subject": subject,

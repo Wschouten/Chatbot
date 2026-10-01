@@ -7,7 +7,7 @@ silently.
 
 ## What this is
 
-A RAG customer-support chatbot for GroundCoverGroup (garden ground-cover products):
+A RAG customer-support chatbot for Boomschors.nl, a webshop of EUROstyle BV (garden ground-cover products; formerly Ground Cover Group):
 Flask backend + ChromaDB + OpenAI, an embeddable chat widget for the Shopify storefront,
 and an admin portal for reviewing conversations. Single-tenant. Production runs on
 Railway and auto-deploys from `master`.
@@ -153,6 +153,14 @@ Every item below has broken production at least once.
   halfway through a flow.
 - **`.dockerignore` is gitignored** ([.gitignore:52](.gitignore)) and therefore never
   reaches Railway. Do not rely on it to keep anything out of the image.
+- **The brand is Boomschors.nl, a webshop of EUROstyle BV** (since 2026-10-01).
+  Ground Cover Group no longer exists. Contact is `klantenservice@boomschors.nl` /
+  `0516 – 715 000`. Only `knowledge_base/over_boomschors.txt` may name the old brand,
+  so the bot can tell a customer who still uses it that it is the same shop;
+  `test_old_brand_name_is_gone` fails on it anywhere else customer-facing. The Chroma
+  collection is still called `groundcovergroup_docs` on purpose — renaming it
+  re-embeds the whole KB. The persona itself comes from the `BRAND_*` vars on
+  Railway, not from code.
 - **Never commit `portal.db`.** A baked-in snapshot resets every admin label, note and
   status on each deploy.
 - **Changing `OPENAI_EMBEDDING_MODEL`** requires wiping `chroma_db/` so everything is

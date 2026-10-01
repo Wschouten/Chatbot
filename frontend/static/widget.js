@@ -1,5 +1,5 @@
 /**
- * GroundCoverGroup Chatbot Widget - Embeddable Script
+ * Boomschors.nl Chatbot Widget - Embeddable Script
  *
  * Usage on Shopify or any website:
  * <script src="https://your-domain.com/widget.js"
@@ -13,8 +13,8 @@
     'use strict';
 
     // Prevent multiple initializations
-    if (window.GroundCoverGroupChatbot) return;
-    window.GroundCoverGroupChatbot = { initialized: true };
+    if (window.BoomschorsChatbot) return;
+    window.BoomschorsChatbot = { initialized: true };
 
     // =============================================================================
     // Configuration from script tag data attributes
@@ -25,7 +25,7 @@
     const scriptTag = document.currentScript || document.querySelector('script[data-api-url]');
     const CONFIG = {
         apiUrl: (scriptTag?.getAttribute('data-api-url') || '').replace(/\/+$/, ''),
-        brand: 'GroundCoverGroup',
+        brand: 'Boomschors.nl',
         position: 'bottom-right',
         primaryColor: '#2C5E2E',
         welcomeMessage: 'Hallo! Hoe kan ik je helpen?',
@@ -34,7 +34,7 @@
 
     // Validate API URL
     if (!CONFIG.apiUrl) {
-        console.error('GroundCoverGroup Chatbot: data-api-url is required');
+        console.error('Boomschors.nl Chatbot: data-api-url is required');
         return;
     }
 
@@ -470,7 +470,7 @@
                     sessionStorage.setItem(SESSION_KEY, sessionId);
                 }
             } catch (error) {
-                console.error('GroundCoverGroup Chatbot: Failed to get session', error);
+                console.error('Boomschors.nl Chatbot: Failed to get session', error);
                 sessionId = 'fallback_' + Date.now();
             }
         }

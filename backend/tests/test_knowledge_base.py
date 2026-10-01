@@ -41,19 +41,53 @@ def test_no_unfilled_placeholders():
 
 
 def test_phone_number_is_consistent():
-    """The pickup section carried 0324-784000; the real number is 0342 - 784 000."""
+    """The pickup section once carried 0324-784000, and since the rebrand to
+    Boomschors.nl the number is 0516 - 715 000; the old 0342 - 784 000 must not linger."""
     wrong = []
     for path in _kb_files():
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-        for match in re.finditer(r'\b03\d{2}\s*[–\-]?\s*784\s*000\b', content):
+        for match in re.finditer(r'(\b0\d{3}|\+31\s*\d{3}|\b0031\s*\d{3})\s*[–\-]?\s*(784|715)\s*000\b', content):
             digits = re.sub(r'\D', '', match.group(0))
-            if not digits.startswith('0342'):
+            if not digits.endswith('516715000'):
                 wrong.append(f"{os.path.basename(path)}: {match.group(0)}")
 
     assert not wrong, (
         "Wrong customer service phone number in the knowledge base "
-        "(expected 0342 – 784 000):\n  " + "\n  ".join(wrong)
+        "(expected 0516 – 715 000):\n  " + "\n  ".join(wrong)
+    )
+
+
+# Ground Cover Group no longer exists: the shop is Boomschors.nl, a webshop of
+# EUROstyle BV. Only over_boomschors.txt may name the old brand, so the bot can
+# tell a customer who still uses it that it is the same shop.
+OLD_BRAND_RE = re.compile(r'ground\s*cover\s*group|groundcovergroup', re.IGNORECASE)
+OLD_BRAND_ALLOWED_KB = {"over_boomschors.txt"}
+CUSTOMER_FACING_CODE = [
+    "app.py", "rag_engine.py", "brand_config.py", "email_client.py",
+    os.path.join("..", "frontend", "static", "widget.js"),
+    os.path.join("..", "frontend", "templates", "portal.html"),
+]
+
+
+def test_old_brand_name_is_gone():
+    offenders = []
+    for path in _kb_files():
+        if os.path.basename(path) in OLD_BRAND_ALLOWED_KB:
+            continue
+        with open(path, "r", encoding="utf-8") as f:
+            if OLD_BRAND_RE.search(f.read()):
+                offenders.append(os.path.basename(path))
+    for rel in CUSTOMER_FACING_CODE:
+        with open(rel, "r", encoding="utf-8") as f:
+            for lineno, line in enumerate(f, 1):
+                # ponytail: the Chroma collection name stays; renaming it re-embeds the whole KB.
+                if OLD_BRAND_RE.search(line) and "groundcovergroup_docs" not in line:
+                    offenders.append(f"{rel}:{lineno}: {line.strip()}")
+
+    assert not offenders, (
+        "The old brand name Ground Cover Group is still customer-facing:\n  "
+        + "\n  ".join(offenders)
     )
 
 
