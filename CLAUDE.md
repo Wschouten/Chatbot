@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 241 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 248 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -225,6 +225,26 @@ different layer:
 
 Still open from this session: the Douglas Premium big bag has no fraction, price or
 volume in the KB, so "hoeveel zit er in?" for that article cannot be answered yet.
+
+### Rebrand to Boomschors.nl (2026-10-01, verified in production)
+
+Ground Cover Group no longer exists (see the brand gotcha above). Replaying production
+after the rebrand turned up two older routing faults as well:
+
+| Commit | What |
+|---|---|
+| `67ee09e` | Name, email and phone everywhere customer-facing; `over_boomschors.txt`; guard test `test_old_brand_name_is_gone` |
+| `0dfa43c` | Old name split into its own KB file so "wie zijn jullie?" stops volunteering it; `PHONE_CONTACT_RE` now catches "jullie/uw … telefoonnummer" — not bare "telefoonnummer", which customers use to give their *own* number |
+| `afa817b` | `PICKUP_RE` above tracking: "kan ik mijn bestelling zelf afhalen?" hit "mijn bestelling" and got the shipment-number prompt |
+
+Railway carries five `BRAND_*`/`SMTP_*` vars; the persona itself comes from the
+defaults in `brand_config.py` — do not set `BRAND_PERSONALITY_*`, it would drop the
+upsell/no-repeat rules. **Open:** escalation mail. The MailerSend account is registered
+on klantenservice@groundcovergroup.nl and the sender is a trial `mlsender.net` domain,
+which only delivers to that address — MailerSend accepts mail for anyone else and the
+log still says "sent successfully". `SMTP_TO_EMAIL` is therefore back on the old
+address for now; move it to klantenservice@boomschors.nl only after the account email
+is changed or boomschors.nl is verified as a sending domain.
 
 ### What this taught, and is still true
 

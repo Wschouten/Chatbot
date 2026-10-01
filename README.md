@@ -32,7 +32,7 @@ A customizable customer support chatbot powered by RAG (Retrieval-Augmented Gene
 │   │   ├── test_set.json       # 28-question evaluation test set
 │   │   └── evaluation_report.md
 │   ├── knowledge_base/         # Place your TXT/PDF documents here (38 files)
-│   ├── tests/                  # Pytest suite (110 tests)
+│   ├── tests/                  # Pytest suite (248 tests)
 │   ├── .env.example            # Environment variable template
 │   └── requirements.txt        # Python dependencies
 ├── frontend/
@@ -207,7 +207,7 @@ cd backend
 python -m pytest
 ```
 
-110 tests, roughly 30 seconds. No API keys needed — `tests/conftest.py` enables mock
+248 tests, roughly 15 seconds. No API keys needed — `tests/conftest.py` enables mock
 integrations and skips import-time knowledge-base ingestion.
 
 ## RAG Evaluation
