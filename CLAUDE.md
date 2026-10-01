@@ -239,12 +239,15 @@ after the rebrand turned up two older routing faults as well:
 
 Railway carries five `BRAND_*`/`SMTP_*` vars; the persona itself comes from the
 defaults in `brand_config.py` — do not set `BRAND_PERSONALITY_*`, it would drop the
-upsell/no-repeat rules. **Open:** escalation mail. The MailerSend account is registered
-on klantenservice@groundcovergroup.nl and the sender is a trial `mlsender.net` domain,
-which only delivers to that address — MailerSend accepts mail for anyone else and the
-log still says "sent successfully". `SMTP_TO_EMAIL` is therefore back on the old
-address for now; move it to klantenservice@boomschors.nl only after the account email
-is changed or boomschors.nl is verified as a sending domain.
+upsell/no-repeat rules.
+
+**`SMTP_TO_EMAIL` stays on klantenservice@groundcovergroup.nl — that is correct, not a
+leftover.** klantenservice@boomschors.nl (the address customers are given) is an alias
+that forwards into that mailbox. Do not "fix" it: the MailerSend account is registered
+on the groundcovergroup.nl address and the sender is a trial `mlsender.net` domain,
+which only delivers to the account's own address. Any other recipient is accepted by
+MailerSend, logged as "sent successfully", and never delivered — that is how the first
+test escalation to boomschors.nl vanished.
 
 ### What this taught, and is still true
 
