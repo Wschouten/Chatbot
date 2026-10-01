@@ -325,6 +325,20 @@ class TestPhoneReplyNamesOpeningHours:
 
         assert "0516" in data["response"]
 
+    def test_rebrand_replay_what_is_your_phone_number_gets_the_hours(self):
+        # "telefoonnummer" missed \btelefoon\b, so this went to the RAG and got the bare number.
+        client = _make_client()
+        sid = _make_session_id()
+
+        data = _post(client, "Wat is jullie telefoonnummer?", sid)
+
+        assert "0516" in data["response"] and "09:00" in data["response"]
+
+    def test_rebrand_customer_giving_own_phone_number_is_not_a_phone_question(self):
+        import app as flask_app
+
+        assert not flask_app.PHONE_CONTACT_RE.search("mijn telefoonnummer is 06-12345678")
+
     def test_sess_jlgtn7_english_phone_reply_names_the_hours(self):
         import app as flask_app
 

@@ -155,7 +155,7 @@ Every item below has broken production at least once.
   reaches Railway. Do not rely on it to keep anything out of the image.
 - **The brand is Boomschors.nl, a webshop of EUROstyle BV** (since 2026-10-01).
   Ground Cover Group no longer exists. Contact is `klantenservice@boomschors.nl` /
-  `0516 – 715 000`. Only `knowledge_base/over_boomschors.txt` may name the old brand,
+  `0516 – 715 000`. Only `knowledge_base/oude_naam_ground_cover_group.txt` may name the old brand (kept apart from `over_boomschors.txt` so "wie zijn jullie?" does not volunteer it),
   so the bot can tell a customer who still uses it that it is the same shop;
   `test_old_brand_name_is_gone` fails on it anywhere else customer-facing. The Chroma
   collection is still called `groundcovergroup_docs` on purpose — renaming it

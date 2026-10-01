@@ -458,6 +458,9 @@ HUMAN_ESCALATION_RE = re.compile(
 )
 PHONE_CONTACT_RE = re.compile(
     r'\b(telefonisch|telefoon|bellen|bel\s+mij|bel\s+me|opbellen|per\s+telefoon|telefooncontact)\b'
+    # Only *our* number: "telefoonnummer" alone also catches a customer giving
+    # their own ("telefoonnummer is 06-..."), twice in the chat exports.
+    r'|\b(jullie|uw|je)\s+(\w+\s+)?telefoonnummer\b|\bwat\s+is\s+(het\s+)?telefoonnummer\b|\bwelk\s+telefoonnummer\b'
     r'|\b(phone|call\s+me|telephone|ring\s+me|call\s+you|over\s+the\s+phone|by\s+phone)\b',
     re.IGNORECASE
 )

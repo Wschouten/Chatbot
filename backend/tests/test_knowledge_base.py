@@ -59,10 +59,10 @@ def test_phone_number_is_consistent():
 
 
 # Ground Cover Group no longer exists: the shop is Boomschors.nl, a webshop of
-# EUROstyle BV. Only over_boomschors.txt may name the old brand, so the bot can
+# EUROstyle BV. Only oude_naam_ground_cover_group.txt may name the old brand, so the bot can
 # tell a customer who still uses it that it is the same shop.
 OLD_BRAND_RE = re.compile(r'ground\s*cover\s*group|groundcovergroup', re.IGNORECASE)
-OLD_BRAND_ALLOWED_KB = {"over_boomschors.txt"}
+OLD_BRAND_ALLOWED_KB = {"oude_naam_ground_cover_group.txt"}
 CUSTOMER_FACING_CODE = [
     "app.py", "rag_engine.py", "brand_config.py", "email_client.py",
     os.path.join("..", "frontend", "static", "widget.js"),
