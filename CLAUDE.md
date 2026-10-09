@@ -303,7 +303,7 @@ does not revoke the 4-hour admin cookie, and Zendesk mode would make the chat em
 ticket requester — both accepted risks while the cookie is HttpOnly + SameSite=Strict
 and production runs in email mode. **PII in chat logs** — only email addresses are
 redacted (see Conventions); names and phone numbers stay because colleagues read the
-logs in the portal. A policy decision, not a bug.
+logs in the portal. Decided 2026-10-09 (Wilco): keep it that way.
 
 ### What this taught, and is still true
 
