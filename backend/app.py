@@ -2189,8 +2189,17 @@ def _handle_chat(request_id: str) -> Response:
     # Reset closing counter on a real message
     state_data.pop('consecutive_closings', None)
 
-    # Feature 15: Detect language BEFORE RAG call so we can translate queries
-    detected_lang = rag_engine.detect_language(user_message)
+    # Feature 15: Detect language BEFORE RAG call so we can translate queries.
+    # Mid-conversation the session language holds unless guess_language clearly says
+    # otherwise: asking the LLM about every message on its own turned "order PGBE-12"
+    # into English halfway through a Dutch conversation (sess_xiw2GqQW, 2026-10-06).
+    # The LLM detector only decides a first message the heuristic cannot.
+    if guessed_lang:
+        detected_lang = guessed_lang
+    elif state_data.get('language') and chat_history:
+        detected_lang = state_data['language']
+    else:
+        detected_lang = rag_engine.detect_language(user_message)
     state_data['language'] = detected_lang
 
     # Fallback to RAG (with conversation history for context)

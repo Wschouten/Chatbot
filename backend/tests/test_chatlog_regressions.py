@@ -471,3 +471,31 @@ class TestChatlog20261009:
         assert "€ 50" in block and "bigbag" in block, (
             "FAQ GCG.txt lost its '### Verzendkosten' section — the injection is silently gone")
         assert _shipping_block("Hoe dik moet ik boomschors strooien?", "nl") == ""
+
+    def test_sess_xiw2_short_reference_keeps_the_conversation_dutch(self):
+        from unittest.mock import patch
+        import app as flask_app
+
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "inactive", "language": "nl", "chat_history": [
+            {"role": "user", "content": "ik heb wel de referentie van de betaling"},
+            {"role": "assistant", "content": "Controleer even je spam- of junkmap."}]})
+        with patch.object(flask_app.rag_engine, "detect_language", return_value="en") as detect, \
+             patch.object(flask_app.rag_engine, "get_answer", return_value="RAG answer") as answer:
+            _post(client, "order PGBE-12", sid)
+
+        assert answer.call_args.kwargs["language"] == "nl"
+        assert not detect.called
+
+    def test_first_message_still_detects_english(self):
+        from unittest.mock import patch
+        import app as flask_app
+
+        client = _make_client()
+        sid = _make_session_id()
+        with patch.object(flask_app.rag_engine, "detect_language", return_value="en"), \
+             patch.object(flask_app.rag_engine, "get_answer", return_value="RAG answer") as answer:
+            _post(client, "Hi, how thick should I spread the bark mulch?", sid)
+
+        assert answer.call_args.kwargs["language"] == "en"
