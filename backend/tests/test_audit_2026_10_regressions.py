@@ -597,3 +597,37 @@ def test_portal_shows_the_conversation_language():
     entries = _json.load(open(f"data/logs/chat_{sid}.json", encoding="utf-8"))
     conv = flask_app._conversation_from_log(sid, entries, None)
     assert conv["metadata"]["language"] == "en"
+
+
+# ---------------------------------------------------------------------------
+# C3 / 1.4: rate limits key on the visitor, not on Railway's proxy
+# ---------------------------------------------------------------------------
+
+def test_client_ip_comes_from_the_proxy_header(caplog):
+    """The same probe that confirmed C3 in production: an unauthenticated admin call
+    logs request.remote_addr."""
+    import logging
+    import app as flask_app
+
+    with caplog.at_level(logging.WARNING, logger="app"):
+        flask_app.app.test_client().get(
+            "/admin/api/conversations",
+            environ_base={"REMOTE_ADDR": "100.64.0.7"},
+            headers={"X-Forwarded-For": "23.249.238.92"},
+        )
+    assert "from 23.249.238.92" in caplog.text
+    assert "100.64.0.7" not in caplog.text
+
+
+def test_widget_is_not_rate_limited():
+    import app as flask_app
+
+    client = flask_app.app.test_client()
+    flask_app.limiter.enabled = True
+    try:
+        flask_app.limiter.reset()
+        codes = {client.get("/widget.js").status_code for _ in range(55)}  # cap is 50/hour
+    finally:
+        flask_app.limiter.enabled = False
+        flask_app.limiter.reset()
+    assert codes == {200}

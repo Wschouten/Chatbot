@@ -10,6 +10,7 @@ import uuid
 from functools import wraps
 from typing import Any
 
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask import Flask, render_template, request, jsonify, Response, g, send_from_directory, redirect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -94,6 +95,11 @@ app = Flask(
     template_folder=str(FRONTEND_DIR / "templates"),
     static_folder=str(FRONTEND_DIR / "static"),
 )
+# Railway's edge proxy is the direct peer, so request.remote_addr was 100.64.0.x for
+# every visitor: all rate limits were one shared bucket and the admin logs recorded
+# the proxy (audit 2026-10-09, C3 — confirmed against production). Trust exactly one
+# hop of X-Forwarded-For, the one Railway appends, so a client cannot spoof it.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 
 # =============================================================================
@@ -759,6 +765,7 @@ def index():
 
 
 @app.route('/widget.js')
+@limiter.exempt  # loaded on every shop page view; the hourly cap hid the widget
 def serve_widget():
     """Serve the embeddable widget script with proper CORS headers."""
     response = send_from_directory(
@@ -780,6 +787,7 @@ def privacy_redirect():
 
 
 @app.route('/health')
+@limiter.exempt
 def health():
     """Enhanced health check with dependency awareness."""
     health_status = {
