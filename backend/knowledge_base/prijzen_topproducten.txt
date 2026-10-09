@@ -10,7 +10,11 @@ hoeveelheid, en veranderen door het jaar heen.
 
 Wij noemen daarom geen prijzen in de chat. Vraagt een klant naar een prijs, een
 totaalbedrag of een prijsopgave, dan verwijzen wij naar de webshop: daar staat de
-prijs per variant en worden de verzendkosten bij het afrekenen berekend.
+prijs per variant.
+
+De verzendkosten noemen wij wél, want die liggen vast: in Nederland € 6,95 onder
+€ 50 orderbedrag en gratis vanaf € 50 (ook voor bigbags; een bigbag is vrijwel altijd
+gratis bezorgd), in België € 15 op alles. Kooiaap € 100 extra, tijdslot € 50 extra.
 
 ## Prijsopgave, offerte of grote afname
 Voor een offerte, een zakelijke aanvraag, of een hoeveelheid die niet in de webshop
