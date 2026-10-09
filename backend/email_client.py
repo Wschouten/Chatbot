@@ -1,7 +1,6 @@
 """MailerSend email client for escalation emails."""
 import logging
 import os
-import threading
 from typing import Any, Optional
 
 import requests as http_requests
@@ -83,6 +82,8 @@ class EmailClient:
 
         body = f"Beste {brand.name},\n\n"
         body += f"Stuur een email naar het volgende mailadres: {requester_email}\n\n"
+        body += f"Naam: {name}\n"
+        body += f"Vraag: {question or '(geen vraag vastgelegd)'}\n\n"
         body += "=" * 50 + "\n"
         body += "COMPLETE CONVERSATION HISTORY\n"
         body += "=" * 50 + "\n\n"
@@ -127,33 +128,3 @@ class EmailClient:
         except http_requests.RequestException as e:
             logger.error("MailerSend API error: %s", e)
             return None
-
-    def send_email_async(
-        self,
-        name: str,
-        requester_email: str,
-        question: str,
-        session_history: Optional[list[dict[str, str]]] = None
-    ) -> Optional[dict[str, Any]]:
-        """Queue an escalation email to be sent in a background thread.
-
-        Returns a truthy result on queue, or None when credentials are missing in
-        production (so the caller can tell the customer honestly instead of
-        promising a follow-up that will never be sent). The actual MailerSend API
-        call happens in a daemon thread so it doesn't block the HTTP response.
-        Any unexpected errors in the thread are logged instead of dying silently.
-        """
-        if not self.is_configured() and not _mocks_allowed():
-            logger.error("MailerSend credentials missing - escalation email NOT queued for: %s", name)
-            return None
-
-        def _send_with_logging() -> None:
-            try:
-                self.send_email(name, requester_email, question, session_history)
-            except Exception:
-                logger.exception("Background escalation email failed for %s", name)
-
-        thread = threading.Thread(target=_send_with_logging, daemon=True)
-        thread.start()
-        subject = f"Chatbot Query from {name}"
-        return {"ticket": {"id": "EMAIL-QUEUED", "subject": subject}}

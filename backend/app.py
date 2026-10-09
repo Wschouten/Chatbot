@@ -1358,7 +1358,10 @@ def _handle_chat(request_id: str) -> Response:
             if ESCALATION_METHOD == "zendesk":
                 result = escalation_client.create_ticket(name, email, original_q, chat_history)
             else:
-                result = escalation_client.send_email_async(name, email, original_q, chat_history)
+                # Synchronous on purpose: the customer is only told "doorgestuurd"
+                # once MailerSend has accepted the mail. The old background send
+                # reported success before the API call even ran (audit C4).
+                result = escalation_client.send_email(name, email, original_q, chat_history)
         except Exception as exc:
             logger.error("Escalation failed with unhandled error: %s", exc)
             result = None
@@ -1366,11 +1369,12 @@ def _handle_chat(request_id: str) -> Response:
         # Reset state and clear history after escalation. `handoff_done` survives so a
         # follow-up question doesn't restart the whole name/email flow, and the name and
         # email survive so a phone number sent afterwards can be forwarded with them
-        # (sess_LHvfGM).
+        # (sess_LHvfGM). A failed send leaves `handoff_done` unset, so asking for a
+        # colleague again retries instead of claiming it is already with one.
         save_session_state(session_id, {
             'state': 'inactive',
             'chat_history': [],
-            'handoff_done': True,
+            'handoff_done': bool(result),
             'name': name,
             'email': email,
         })
@@ -1403,7 +1407,7 @@ def _handle_chat(request_id: str) -> Response:
             if ESCALATION_METHOD == "zendesk":
                 escalation_client.create_ticket(name, email, note, chat_history)
             else:
-                escalation_client.send_email_async(name, email, note, chat_history)
+                escalation_client.send_email(name, email, note, chat_history)
         except Exception as exc:
             logger.error("Forwarding phone number failed: %s", exc)
         state_data['phone_forwarded'] = True

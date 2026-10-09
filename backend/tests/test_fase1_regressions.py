@@ -50,8 +50,8 @@ class TestMockGatingProduction:
                                      "MAILERSEND_API_KEY": "", "SMTP_FROM_EMAIL": "",
                                      "SMTP_TO_EMAIL": ""}):
             client = EmailClient()
-            result = client.send_email_async("Test User", "test@example.com", "Test question")
-        assert result is None, "Missing MailerSend creds in production must return None, not a queued fake"
+            result = client.send_email("Test User", "test@example.com", "Test question")
+        assert result is None, "Missing MailerSend creds in production must return None, not a fake send"
 
 
 class TestSessionIdNullCrash:

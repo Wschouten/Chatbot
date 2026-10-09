@@ -294,7 +294,7 @@ def test_sess_lhvfgm_phone_number_after_handoff_is_forwarded(client):
         "name": "Jarno", "email": "jarno@example.com",
     })
     sender = MagicMock(return_value=True)
-    flask_app.escalation_client.send_email_async = sender
+    flask_app.escalation_client.send_email = sender
 
     data = _post(client, "Bel me even op 06-12345678", sid)
     assert sender.called, "the phone number was not forwarded"
