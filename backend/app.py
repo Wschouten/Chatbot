@@ -910,14 +910,14 @@ DEAD_END_LOOP_THRESHOLD = 2
 
 
 def _detect_dead_end_loop(chat_history: list[dict]) -> bool:
-    """Return True when the bot has hit the customer-service dead end twice or more."""
-    count = sum(
-        1
-        for turn in chat_history
-        if turn.get("role") == "assistant"
-        and _DEAD_END_PATTERN.search(turn.get("content", ""))
-    )
-    return count >= DEAD_END_LOOP_THRESHOLD
+    """Return True when the bot's last two answers were both the customer-service
+    dead end. Counting over the whole 10-turn window fired on ordinary answers that
+    happen to cite klantenservice@ (which the prompt asks for), and then kept firing
+    on every later message because the window never moved (audit 1.7)."""
+    recent = [t.get("content", "") for t in chat_history
+              if t.get("role") == "assistant"][-DEAD_END_LOOP_THRESHOLD:]
+    return (len(recent) == DEAD_END_LOOP_THRESHOLD
+            and all(_DEAD_END_PATTERN.search(c) for c in recent))
 
 
 def get_session_state(session_id: str) -> dict[str, Any]:
@@ -1477,9 +1477,9 @@ def _handle_chat(request_id: str) -> Response:
         if intent == 'declining':
             # User doesn't want a ticket - cancel and return to chat
             state_data = {'state': 'inactive', 'chat_history': chat_history}
-            save_session_state(session_id, state_data)
-
             resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
+            # Recorded, so the loop detector sees the conversation moved on.
+            _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
 
@@ -1538,9 +1538,8 @@ def _handle_chat(request_id: str) -> Response:
             if intent == 'declining':
                 # User changed their mind - cancel ticket
                 state_data = {'state': 'inactive', 'chat_history': chat_history}
-                save_session_state(session_id, state_data)
-
                 resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
+                _remember_turn(resp)
                 _log_chat_message(session_id, request_id, user_message, resp)
                 return jsonify({"response": resp, "request_id": request_id})
 

@@ -288,3 +288,38 @@ def test_offering_your_own_number_is_not_a_question_about_ours():
 
     assert not PHONE_CONTACT_RE.search("Mag ik je mijn telefoonnummer geven?")
     assert PHONE_CONTACT_RE.search("Wat is je telefoonnummer?")
+
+
+# ---------------------------------------------------------------------------
+# 1.7: the dead-end loop detector looks at the last two answers only
+# ---------------------------------------------------------------------------
+
+_DEAD_END = "Neem contact op via klantenservice@boomschors.nl."
+
+
+def _turns(*answers):
+    history = []
+    for a in answers:
+        history += [{"role": "user", "content": "vraag"}, {"role": "assistant", "content": a}]
+    return history
+
+
+def test_loop_detector_ignores_non_consecutive_contact_mentions():
+    from app import _detect_dead_end_loop
+
+    assert not _detect_dead_end_loop(_turns(_DEAD_END, "Minimaal 8 cm.", _DEAD_END))
+    assert _detect_dead_end_loop(_turns("Minimaal 8 cm.", _DEAD_END, _DEAD_END))
+
+
+def test_declining_the_handoff_stops_the_loop_escalation():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, {
+        "state": "awaiting_name", "language": "nl", "question": "x",
+        "chat_history": _turns(_DEAD_END, _DEAD_END),
+    })
+    with patch.object(flask_app.rag_engine, "detect_ticket_intent", return_value="declining"):
+        _post(client, "nee hoeft niet", sid)
+    data = _post(client, "Hoe dik moet ik strooien?", sid)
+
+    assert data["response"] == "RAG answer", data["response"]
