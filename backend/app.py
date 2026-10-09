@@ -1186,10 +1186,13 @@ def _handle_chat(request_id: str) -> Response:
     """Inner chat handler (extracted so the outer function can catch all errors)."""
     data = request.json
     user_message: str = (data.get('message') or '') if data else ''
-    # Use `or` (not a default arg): the widget can POST session_id: null before its
-    # async fetchSession() resolves; data.get('session_id', ...) would return None
-    # (key present) and crash sanitize_session_id(None) with a TypeError.
-    session_id: str = (data.get('session_id') or 'unknown_session') if data else 'unknown_session'
+    # The widget can POST session_id: null (a 429/500 from /api/session). That used to
+    # fall back to one shared 'unknown_session', so strangers read each other's name,
+    # email and history (audit C5). A missing id now gets a fresh throwaway one.
+    raw_session_id = data.get('session_id') if data else None
+    session_id: str = (
+        sanitize_session_id(raw_session_id) if isinstance(raw_session_id, str) else ''
+    ) or f"sess_{secrets.token_urlsafe(24)}"
 
     logger.info("[%s] Chat request from session %s", request_id, sanitize_session_id(session_id)[:20])
 

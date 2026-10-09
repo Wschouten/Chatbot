@@ -464,15 +464,19 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' }
                 });
-                const data = await response.json();
+                const data = response.ok ? await response.json() : {};
                 if (data.session_id) {
                     sessionId = data.session_id;
                     sessionStorage.setItem(SESSION_KEY, sessionId);
+                    return;
                 }
             } catch (error) {
                 console.error('Boomschors.nl Chatbot: Failed to get session', error);
-                sessionId = 'fallback_' + Date.now();
             }
+            // A 429/500 used to leave sessionId null, and every such visitor shared
+            // one server-side session. Fall back to a unique local id instead.
+            sessionId = 'fallback_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+            sessionStorage.setItem(SESSION_KEY, sessionId);
         }
 
         // Toggle chat

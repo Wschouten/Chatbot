@@ -92,3 +92,31 @@ def test_failed_escalation_is_not_reported_as_sent():
     assert "ging iets mis" in data["response"]
     # Not marked as handed off, so asking again retries instead of "al bij een collega".
     assert not flask_app.get_session_state(sid).get("handoff_done")
+
+
+# ---------------------------------------------------------------------------
+# C5: a missing session id must never map visitors onto one shared session
+# ---------------------------------------------------------------------------
+
+def test_null_session_id_is_never_shared():
+    flask_app, client = _make_client()
+    seen = []
+    real_get = flask_app.get_session_state
+
+    def spy(session_id):
+        seen.append(session_id)
+        return real_get(session_id)
+
+    with patch.object(flask_app, "get_session_state", side_effect=spy):
+        for _ in range(2):
+            resp = client.post("/api/chat", json={"message": "Hallo", "session_id": None})
+            assert resp.status_code == 200
+
+    for sid in seen:  # minted ids are not test_-prefixed, so conftest won't purge them
+        for path in (f"data/sessions/{sid}.json", f"data/logs/chat_{sid}.json"):
+            if os.path.exists(path):
+                os.remove(path)
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1], "two visitors without a session id shared one session"
+    assert "unknown_session" not in seen
