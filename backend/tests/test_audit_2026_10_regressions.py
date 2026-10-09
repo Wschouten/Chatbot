@@ -580,3 +580,20 @@ def test_only_portal_js_is_served():
     _, client = _make_client()
     assert client.get("/portal/js/storage.js").status_code == 200
     assert client.get("/portal/trainingdata/x.json").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — the portal sees each conversation's language
+# ---------------------------------------------------------------------------
+
+def test_portal_shows_the_conversation_language():
+    import json as _json
+
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, {"state": "inactive", "language": "en", "chat_history": []})
+    _post(client, "Where is my parcel?", sid)
+
+    entries = _json.load(open(f"data/logs/chat_{sid}.json", encoding="utf-8"))
+    conv = flask_app._conversation_from_log(sid, entries, None)
+    assert conv["metadata"]["language"] == "en"

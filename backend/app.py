@@ -1161,7 +1161,8 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             )
 
 
-def _log_chat_message(session_id: str, request_id: str, user_message: str, response_text: str) -> None:
+def _log_chat_message(session_id: str, request_id: str, user_message: str, response_text: str,
+                      lang: str | None = None) -> None:
     """Log a chat message exchange to the conversation log file."""
     try:
         log_dir = "data/logs"
@@ -1172,7 +1173,10 @@ def _log_chat_message(session_id: str, request_id: str, user_message: str, respo
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "request_id": request_id,
             "user": _redact_pii_for_log(user_message),
-            "bot": _redact_pii_for_log(response_text)
+            "bot": _redact_pii_for_log(response_text),
+            # The portal's NL/EN badge and filter read this; nothing wrote a language
+            # before, so every conversation showed as NL (audit 2026-10-09).
+            "lang": lang,
         }
 
         safe_id = sanitize_session_id(session_id)
@@ -1299,7 +1303,8 @@ def _handle_chat(request_id: str) -> Response:
         a canned reply that skipped the history left the next message reformulated
         without context and the escalation email without a transcript (audit 2026-10-09)."""
         _remember_turn(response)
-        _log_chat_message(session_id, request_id, user_message, response)
+        _log_chat_message(session_id, request_id, user_message, response,
+                          state_data.get('language'))
         return jsonify({"response": response, "request_id": request_id})
 
     def _start_handoff(
@@ -1438,7 +1443,7 @@ def _handle_chat(request_id: str) -> Response:
             resp = ("Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op."
                     if lang == 'nl' else
                     "I'm sorry, something went wrong sending your message. Please contact us directly.")
-        _log_chat_message(session_id, request_id, user_message, resp)
+        _log_chat_message(session_id, request_id, user_message, resp, lang)
         return jsonify({"response": resp, "request_id": request_id})
 
     def _forward_phone_number(lang: str) -> None:
@@ -2220,13 +2225,39 @@ def admin_session_check():
     return jsonify({"authenticated": False}), 401
 
 
+def _conversation_from_log(session_id: str, entries: list[dict], meta: dict | None) -> dict:
+    """Build the portal's conversation object from a chat log and its portal.db row.
+    Shared by the list and the detail endpoint so the two cannot drift apart (the B7
+    class of bug). The language comes from portal.db when set, else from the log."""
+    meta = meta or {}
+    logged_lang = next((e["lang"] for e in reversed(entries) if e.get("lang")), None)
+    return {
+        "id": session_id,
+        "started": entries[0].get("timestamp", ""),
+        "lastMessage": entries[-1].get("timestamp", ""),
+        "messageCount": len(entries),
+        "messages": [
+            {"timestamp": e.get("timestamp", ""), "user": e.get("user", ""), "bot": e.get("bot", "")}
+            for e in entries
+        ],
+        "metadata": {
+            "status": meta.get("status", "open"),
+            "rating": meta.get("rating"),
+            "language": meta.get("language") or logged_lang,
+            "labels": meta.get("labels", []),
+            "notes": meta.get("notes", []),
+            "messageMetadata": meta.get("messageMetadata", {}),
+        },
+    }
+
+
 @app.route('/admin/api/conversations', methods=['GET'])
 @limiter.limit("30 per minute")
 @require_admin_key
 def admin_conversations():
     """Return all chat log files for the admin portal (requires ADMIN_API_KEY)."""
     log_dir = "data/logs"
-    conversations = []
+    logs: dict[str, list[dict]] = {}
 
     if not os.path.isdir(log_dir):
         return jsonify({"conversations": []})
@@ -2241,60 +2272,21 @@ def admin_conversations():
             if not entries:
                 continue
             # Derive session id from filename: chat_<session_id>.json
-            session_id = filename[len("chat_"):-len(".json")]
-            conversations.append({
-                "id": session_id,
-                "started": entries[0].get("timestamp", ""),
-                "lastMessage": entries[-1].get("timestamp", ""),
-                "messageCount": len(entries),
-                "messages": [
-                    {
-                        "timestamp": e.get("timestamp", ""),
-                        "user": e.get("user", ""),
-                        "bot": e.get("bot", "")
-                    }
-                    for e in entries
-                ]
-            })
+            logs[filename[len("chat_"):-len(".json")]] = entries
         except (json.JSONDecodeError, IOError, KeyError) as e:
             logger.warning("Skipping corrupt log file %s: %s", filename, e)
 
-    # Sort newest-first by last message timestamp
-    conversations.sort(
-        key=lambda c: c.get("lastMessage", ""), reverse=True
-    )
-
     # Feature 30d: Overlay persistent metadata from SQLite database
     try:
-        metadata_list = admin_db.get_all_metadata()
-        metadata_map = {m["session_id"]: m for m in metadata_list}
+        metadata_map = {m["session_id"]: m for m in admin_db.get_all_metadata()}
     except Exception as e:
         logger.error("Failed to load portal metadata: %s", e)
         metadata_map = {}
 
-    default_meta = {
-        "status": "open",
-        "rating": None,
-        "language": None,
-        "labels": [],
-        "notes": [],
-        "messageMetadata": {},
-    }
-    for conv in conversations:
-        sid = conv.get("id")
-        if sid and sid in metadata_map:
-            meta = metadata_map[sid]
-            conv["metadata"] = {
-                "status": meta.get("status", "open"),
-                "rating": meta.get("rating"),
-                "language": meta.get("language"),
-                "labels": meta.get("labels", []),
-                "notes": meta.get("notes", []),
-                "messageMetadata": meta.get("messageMetadata", {}),
-            }
-        else:
-            conv["metadata"] = dict(default_meta)
-
+    conversations = [_conversation_from_log(sid, entries, metadata_map.get(sid))
+                     for sid, entries in logs.items()]
+    # Sort newest-first by last message timestamp
+    conversations.sort(key=lambda c: c.get("lastMessage", ""), reverse=True)
     return jsonify({"conversations": conversations})
 
 
@@ -2333,55 +2325,13 @@ def get_single_conversation(session_id):
     if not entries:
         return jsonify({"error": "Conversation is empty"}), 404
 
-    # Step 3: Build conversation object
-    conversation = {
-        "id": safe_id,
-        "started": entries[0].get("timestamp", ""),
-        "lastMessage": entries[-1].get("timestamp", ""),
-        "messageCount": len(entries),
-        "messages": [
-            {
-                "timestamp": e.get("timestamp", ""),
-                "user": e.get("user", ""),
-                "bot": e.get("bot", "")
-            }
-            for e in entries
-        ]
-    }
-
-    # Step 4: Overlay metadata from database
+    # Step 3: Build conversation object, with metadata from the database
     try:
         metadata = admin_db.get_metadata(safe_id)
-        if metadata:
-            conversation["metadata"] = {
-                "status": metadata.get("status", "open"),
-                "rating": metadata.get("rating"),
-                "language": metadata.get("language"),
-                "labels": metadata.get("labels", []),
-                "notes": metadata.get("notes", []),
-                "messageMetadata": metadata.get("messageMetadata", {}),
-            }
-        else:
-            # No metadata exists yet - use defaults
-            conversation["metadata"] = {
-                "status": "open",
-                "rating": None,
-                "language": None,
-                "labels": [],
-                "notes": [],
-                "messageMetadata": {},
-            }
     except Exception as e:
         logger.error("Failed to load metadata for %s: %s", safe_id, e)
-        # Return conversation without metadata rather than failing entirely
-        conversation["metadata"] = {
-            "status": "open",
-            "rating": None,
-            "language": None,
-            "labels": [],
-            "notes": [],
-            "messageMetadata": {},
-        }
+        metadata = None  # return the conversation rather than failing entirely
+    conversation = _conversation_from_log(safe_id, entries, metadata)
 
     return jsonify(conversation), 200
 
