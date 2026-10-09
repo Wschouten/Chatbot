@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 248 tests, ~15s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 254 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -79,13 +79,12 @@ entry point means calling that, not setting `state = 'awaiting_name'` yourself.
 
 Session state is one JSON dict per session on disk, via `get_session_state` /
 `save_session_state` ([app.py:700](backend/app.py)), keyed with `awaiting_*` and
-`pending_*` flags. There are four flows:
+`pending_*` flags. There are three flows:
 
 | Flow | Keys |
 |---|---|
 | Handoff to a human | `awaiting_name` → `awaiting_email` |
 | Track & trace (StatusWeb) | `awaiting_order_number`, `pending_order_id` |
-| Shopify order lookup | `awaiting_shopify_order_number` → `awaiting_shopify_postcode` |
 | Stock lookup — **off in production** | `awaiting_product_name`, `pending_product_query` |
 
 **Debugging a bad conversation:** grep for the literal bot response string in `app.py`
@@ -105,8 +104,11 @@ Every item below has broken production at least once.
   outside that gate.
 - **`TESTING=1` in the suite.** `tests/conftest.py` sets it so that importing `app`
   skips `ingest_documents()` (bills the OpenAI embeddings API, 12+ min cold) and
-  `run_data_retention_cleanup()` (deletes files). It also sets `USE_MOCKS` and pins the
-  CWD to `backend/`. Do not remove any of the three.
+  `run_data_retention_cleanup()` (deletes files). It also sets `USE_MOCKS`, pins the
+  CWD to `backend/`, and **blanks every integration key** (`INTEGRATION_KEYS`) before
+  `import app` — the clients mock only when a key is *missing*, so with a filled-in
+  local `backend/.env` the suite used to bill OpenAI, query StatusWeb and send a real
+  escalation email to the support inbox (audit 2026-10-09, C2). Do not remove any of these.
 - **The knowledge base re-indexes on edit via a content hash** (since 2026-07-29).
   Every chunk stores `content_hash`; `ingest_documents` skips a file only when the
   stored digest still matches, and otherwise deletes the file's chunks
@@ -122,7 +124,7 @@ Every item below has broken production at least once.
   corrected text sat in the file).
 - **Guided flows need an escape hatch.** `_handle_chat` checks
   `PHONE_CONTACT_RE` / `HUMAN_ESCALATION_RE` / `FRUSTRATION_RE` **before** the
-  tracking/Shopify/stock state machines, and `_flow_dead_end()` hands over to a human
+  tracking/stock state machines, and `_flow_dead_end()` hands over to a human
   after two failed attempts in the same flow. Without it a customer could not get out:
   "Echte persoon" was answered with the shipment-number prompt eight times in a row.
   Any new `awaiting_*` flow must be added to `GUIDED_FLOW_KEYS`.
@@ -180,11 +182,13 @@ verify `/health`.
 
 ## Features deliberately off
 
-Stock lookup and WISMO ("where is my order") are gated off until
-`SHOPIFY_STOREFRONT_TOKEN` and `SHOPIFY_STORE_DOMAIN` are set on Railway —
-`_stock_lookup_enabled()`, [app.py:47](backend/app.py). Without a token a stock question
-falls through to RAG instead of dead-ending. Both features reactivate themselves once
-the token lands. Background:
+Stock lookup is gated off until `SHOPIFY_STOREFRONT_TOKEN` and `SHOPIFY_STORE_DOMAIN`
+are set on Railway — `_stock_lookup_enabled()`, [app.py:47](backend/app.py). Without a
+token a stock question falls through to RAG instead of dead-ending; it reactivates
+itself once the token lands. The WISMO order-number → postcode flow was **removed** in
+`305e303` (audit 2026-10-09): it collected both values, discarded them and asked for
+the shipment number anyway. Rebuild it from scratch against the real Shopify API when
+the token exists. Background:
 [improvement-plan/features/60-wismo-shopify-direct-api.md](improvement-plan/features/60-wismo-shopify-direct-api.md).
 
 ## Chatlog-driven improvements — all five phases done
@@ -248,6 +252,27 @@ on the groundcovergroup.nl address and the sender is a trial `mlsender.net` doma
 which only delivers to the account's own address. Any other recipient is accepted by
 MailerSend, logged as "sent successfully", and never delivered — that is how the first
 test escalation to boomschors.nl vanished.
+
+### Code audit 2026-10-09 — Fase 1 done
+
+A read-only, adversarially verified audit of the whole repo:
+[AUDIT-2026-10-09.md](AUDIT-2026-10-09.md) (41 findings, phased plan). Fase 1 is
+implemented; each fix has a test in `tests/test_audit_2026_10_regressions.py`.
+
+| Commit | What |
+|---|---|
+| `2675095` | C2 — the suite blanks every integration key (see the `TESTING=1` gotcha) |
+| `fd8eef0` | C1/C4 — escalation email carries name + question; sent synchronously, `handoff_done` only on success |
+| `8468ecf` | C5 — a missing `session_id` gets its own id, never a shared `unknown_session` |
+| `6335d0c` | C6 — frustration gate and `_flow_dead_end` go through `_start_handoff`; `flow_attempts` resets per flow |
+| `305e303` | 1.8 — Shopify order/postcode flow removed; a tracking question with an 8+ digit number is looked up at once (`_statusweb_reply`) |
+| `901e34b` | 1.6 — a phone number given during the handoff goes with the escalation; asking ours only pauses it |
+| `23076eb` | 1.7 — loop detector needs the *last two* answers to be dead ends; declines are recorded |
+
+Still open: **1.4** — rate limits are probably keyed on Railway's proxy IP (no
+`ProxyFix`), so all visitors may share one bucket; check the access log before fixing.
+Then Fase 2 (router narrowing, `_remember_turn` everywhere, `volume_calc` units) and
+Fase 3 (dead code, ~250 lines left).
 
 ### What this taught, and is still true
 
