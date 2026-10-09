@@ -55,7 +55,7 @@ def _make_client():
     # This module posts a lot of messages; without disabling the limiter object
     # itself the 30/min cap on /api/chat leaks into later test modules as 429s.
     flask_app.limiter.enabled = False
-    flask_app.rag_engine.generate_response = MagicMock(return_value="RAG answer")
+    flask_app.rag_engine.get_answer = MagicMock(return_value="RAG answer")
     flask_app.rag_engine.detect_language = MagicMock(return_value="nl")
     flask_app.rag_engine.detect_ticket_intent = MagicMock(return_value="giving_name")
     return flask_app.app.test_client()

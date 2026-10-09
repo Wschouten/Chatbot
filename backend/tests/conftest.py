@@ -15,6 +15,19 @@ import pytest
 # Enable mock integrations for the test run (no real API keys required).
 os.environ["USE_MOCKS"] = "true"
 
+# Blank every integration credential before `import app` runs load_dotenv() —
+# load_dotenv never overrides an existing variable, so this keeps a filled-in
+# backend/.env from making the suite bill OpenAI, query StatusWeb or send real
+# escalation email. The clients fall back to mocks only when a key is missing.
+INTEGRATION_KEYS = (
+    "OPENAI_API_KEY", "SHIPPING_API_KEY", "SHIPPING_API_PASSWORD",
+    "MAILERSEND_API_KEY", "SMTP_FROM_EMAIL", "SMTP_TO_EMAIL",
+    "ZENDESK_SUBDOMAIN", "ZENDESK_EMAIL", "ZENDESK_API_TOKEN",
+    "SHOPIFY_STOREFRONT_TOKEN", "SHOPIFY_STORE_DOMAIN", "ZAPIER_WEBHOOK_URL_WISMO",
+)
+for _key in INTEGRATION_KEYS:
+    os.environ[_key] = ""
+
 # Skip import-time KB ingestion (bills the OpenAI API) and the data-retention
 # cleanup (deletes files) when `import app` runs during collection.
 os.environ["TESTING"] = "1"

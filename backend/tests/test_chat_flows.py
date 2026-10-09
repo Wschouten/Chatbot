@@ -62,9 +62,7 @@ def _make_client():
     flask_app.app.config["RATELIMIT_ENABLED"] = False
 
     # Mock the rag_engine instance methods so no OpenAI calls are made
-    flask_app.rag_engine.generate_response = MagicMock(
-        return_value="RAG answer"
-    )
+    flask_app.rag_engine.get_answer = MagicMock(return_value="RAG answer")
     flask_app.rag_engine.detect_language = MagicMock(return_value="nl")
     flask_app.rag_engine.detect_ticket_intent = MagicMock(return_value="giving_name")
 
