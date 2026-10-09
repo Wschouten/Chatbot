@@ -125,11 +125,8 @@ All branding is controlled through environment variables — no code changes nee
 | Variable | Description |
 |---|---|
 | `BRAND_NAME` | Company name (e.g., `Boomschors.nl`) |
-| `BRAND_ASSISTANT_NAME` | Name shown in the chat widget |
 | `BRAND_PERSONALITY_NL` | Dutch persona prompt for the LLM |
 | `BRAND_PERSONALITY_EN` | English persona prompt for the LLM |
-| `BRAND_WELCOME_NL` | Dutch greeting message |
-| `BRAND_WELCOME_EN` | English greeting message |
 | `BRAND_RELEVANT_TOPICS` | Comma-separated topics for scope validation |
 | `BRAND_USE_EMOJIS` | `true` / `false` — enable emoji in responses |
 | `BRAND_SUPPORT_HEADER` | Admin portal header text |

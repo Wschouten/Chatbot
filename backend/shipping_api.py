@@ -4,6 +4,7 @@ import re
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
+from mocks import mocks_allowed as _mocks_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +15,6 @@ STATUSWEB_WSDL = 'https://www.statusweb.nl/StatuswebAPIv4/Service.wso?WSDL'
 # can't permanently pin a gunicorn worker thread.
 SOAP_TIMEOUT = 15
 
-
-def _mocks_allowed() -> bool:
-    """Whether a mock shipping response may stand in for a missing API key.
-
-    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
-    In production a missing SHIPPING_API_KEY yields an honest error instead of a
-    fabricated "onderweg" status shown to a real customer.
-    """
-    truthy = ('1', 'true', 'yes')
-    return (os.getenv('USE_MOCKS', '').strip().lower() in truthy
-            or os.getenv('FLASK_DEBUG', '').strip().lower() in truthy)
 
 # StatusWeb error codes
 SW_OK = 1

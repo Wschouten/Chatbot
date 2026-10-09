@@ -14,14 +14,9 @@ class BrandConfig:
     # Core brand identity
     name: str  # e.g., "Boomschors.nl"
     product_line: str  # e.g., "Ecostyle"
-    assistant_name: str  # e.g., "Boomschors.nl"
 
     # Topic validation (comma-separated list of relevant topics)
     relevant_topics: str  # e.g., "tuinieren, boomschors, producten"
-
-    # Welcome messages
-    welcome_message_nl: str
-    welcome_message_en: str
 
     # Support header text
     support_header: str
@@ -36,20 +31,12 @@ class BrandConfig:
         """Load brand configuration from environment variables."""
         name = os.environ.get("BRAND_NAME", "Boomschors.nl")
         product_line = os.environ.get("BRAND_PRODUCT_LINE", "Boomschors.nl")
-        assistant_name = os.environ.get("BRAND_ASSISTANT_NAME", "Boomschors.nl")
 
         # Default relevant topics
         default_topics = f"tuinieren, {product_line}, {name}, producten, gardening, products"
         relevant_topics = os.environ.get("BRAND_RELEVANT_TOPICS", default_topics)
 
-        # Default welcome messages with brand interpolation
-        default_welcome_nl = f"Hallo! Hoe kan ik je helpen vandaag?"
-        default_welcome_en = f"Hello! How can I help you today?"
-
-        welcome_nl = os.environ.get("BRAND_WELCOME_NL", default_welcome_nl)
-        welcome_en = os.environ.get("BRAND_WELCOME_EN", default_welcome_en)
-
-        support_header = os.environ.get("BRAND_SUPPORT_HEADER", f"{assistant_name} Support")
+        support_header = os.environ.get("BRAND_SUPPORT_HEADER", f"{name} Support")
 
         # Default personality prompts - friendly customer service representative
         default_personality_nl = (
@@ -85,10 +72,7 @@ class BrandConfig:
         return cls(
             name=name,
             product_line=product_line,
-            assistant_name=assistant_name,
             relevant_topics=relevant_topics,
-            welcome_message_nl=welcome_nl,
-            welcome_message_en=welcome_en,
             support_header=support_header,
             personality_nl=personality_nl,
             personality_en=personality_en,

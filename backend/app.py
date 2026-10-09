@@ -26,23 +26,11 @@ from data_retention import run_data_retention_cleanup
 import requests
 import admin_db
 from pathlib import Path
+from mocks import mocks_allowed as _mocks_allowed
 
 
 # Load environment variables
 load_dotenv()
-
-
-def _mocks_allowed() -> bool:
-    """Whether fabricated mock responses may stand in for missing integrations.
-
-    Only true in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
-    In production this is false, so a missing API key surfaces an honest error to
-    the customer instead of a fabricated "success" (fake tracking status, fake
-    stock, fake escalation ticket).
-    """
-    truthy = ('1', 'true', 'yes')
-    return (os.getenv('USE_MOCKS', '').strip().lower() in truthy
-            or os.getenv('FLASK_DEBUG', '').strip().lower() in truthy)
 
 
 def _stock_lookup_enabled() -> bool:
@@ -847,6 +835,11 @@ def health():
                 "status": "mock_mode",
                 "message": f"Using mock {escalation_key} client (no real calls)"
             }
+        elif not escalation_client.is_configured():
+            health_status["dependencies"][escalation_key] = {
+                "status": "not_configured",
+                "message": "Credentials missing: escalations fail",
+            }
         else:
             health_status["dependencies"][escalation_key] = {
                 "status": "configured",
@@ -866,6 +859,11 @@ def health():
             health_status["dependencies"]["shipping"] = {
                 "status": "mock_mode",
                 "message": "Using mock shipping responses (no API key)"
+            }
+        elif not shipping_client.api_key:
+            health_status["dependencies"]["shipping"] = {
+                "status": "not_configured",
+                "message": "No API key: tracking lookups fail",
             }
         else:
             health_status["dependencies"]["shipping"] = {
@@ -1059,7 +1057,7 @@ def _format_price(price_min, price_max, currency: str, lang: str) -> str | None:
 
 def format_stock_response(result: dict, lang: str, query: str = "") -> str:
     """Format a Shopify product availability result into a user-friendly message."""
-    use_emojis = os.getenv("BRAND_USE_EMOJIS", "true").lower() == "true"
+    use_emojis = get_brand_config().use_emojis
 
     if result["outcome"] == "found":
         p = result["products"][0]

@@ -6,25 +6,14 @@ from typing import Any, Optional
 
 import requests
 
-from brand_config import get_brand_config
+from email_client import format_transcript
+from mocks import mocks_allowed as _mocks_allowed
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Request timeout in seconds (connect timeout, read timeout)
 REQUEST_TIMEOUT = (5, 30)
-
-
-def _mocks_allowed() -> bool:
-    """Whether a mock ticket may stand in for missing Zendesk credentials.
-
-    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
-    In production missing creds return a failure so the bot tells the customer
-    honestly instead of promising a ticket that was never created.
-    """
-    truthy = ('1', 'true', 'yes')
-    return (os.environ.get('USE_MOCKS', '').strip().lower() in truthy
-            or os.environ.get('FLASK_DEBUG', '').strip().lower() in truthy)
 
 
 class ZendeskClient:
@@ -42,8 +31,8 @@ class ZendeskClient:
 
     @property
     def use_mock(self) -> bool:
-        """Check if running in mock mode (credentials missing)."""
-        return not self.is_configured()
+        """Mock mode: credentials missing *and* mocks allowed — same rule as shipping."""
+        return not self.is_configured() and _mocks_allowed()
 
     def create_ticket(
         self,
@@ -83,26 +72,7 @@ class ZendeskClient:
             "Authorization": auth_header
         }
 
-        # Build Description with full conversation history
-        brand = get_brand_config()
-        welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
-
-        description = f"Original Question: {question}\n\n"
-        description += "=" * 50 + "\n"
-        description += "COMPLETE CONVERSATION HISTORY\n"
-        description += "=" * 50 + "\n\n"
-
-        # Include the welcome message that starts every conversation
-        description += f"Bot: {welcome_msg}\n\n"
-
-        if session_history:
-            for msg in session_history:
-                role = msg.get('role', 'unknown')
-                content = msg.get('content', '')
-                prefix = "Customer" if role == 'user' else "Bot"
-                description += f"{prefix}: {content}\n\n"
-        else:
-            description += "(No further conversation history)\n"
+        description = f"Original Question: {question}\n\n" + format_transcript(session_history)
 
         payload = {
             "ticket": {

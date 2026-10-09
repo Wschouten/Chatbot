@@ -6,6 +6,7 @@ from typing import Any, Optional
 import requests as http_requests
 
 from brand_config import get_brand_config
+from mocks import mocks_allowed as _mocks_allowed
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -17,16 +18,19 @@ MAILERSEND_API_URL = "https://api.mailersend.com/v1/email"
 HTTP_TIMEOUT = 15
 
 
-def _mocks_allowed() -> bool:
-    """Whether a mock 'sent' result may stand in for missing MailerSend creds.
+def format_transcript(session_history: Optional[list[dict[str, str]]]) -> str:
+    """The conversation as plain text, for the escalation email and Zendesk ticket.
 
-    Only in development (FLASK_DEBUG) or when explicitly opted in (USE_MOCKS).
-    In production missing creds return a failure so the bot tells the customer
-    honestly instead of silently dropping the lead.
+    No made-up opening line: both used to start with "Bot: <BRAND_WELCOME_NL>", a
+    greeting the customer never saw (the widget shows its own).
     """
-    truthy = ('1', 'true', 'yes')
-    return (os.environ.get('USE_MOCKS', '').strip().lower() in truthy
-            or os.environ.get('FLASK_DEBUG', '').strip().lower() in truthy)
+    text = "=" * 50 + "\nCOMPLETE CONVERSATION HISTORY\n" + "=" * 50 + "\n\n"
+    if not session_history:
+        return text + "(No further conversation history)\n"
+    for msg in session_history:
+        prefix = "Customer" if msg.get('role') == 'user' else "Bot"
+        text += f"{prefix}: {msg.get('content', '')}\n\n"
+    return text
 
 
 class EmailClient:
@@ -44,8 +48,8 @@ class EmailClient:
 
     @property
     def use_mock(self) -> bool:
-        """Check if running in mock mode (credentials missing)."""
-        return not self.is_configured()
+        """Mock mode: credentials missing *and* mocks allowed — same rule as shipping."""
+        return not self.is_configured() and _mocks_allowed()
 
     def send_email(
         self,
@@ -78,25 +82,12 @@ class EmailClient:
 
         # Build email body with full conversation history
         brand = get_brand_config()
-        welcome_msg = f"{brand.welcome_message_nl} (I also speak English!)"
 
         body = f"Beste {brand.name},\n\n"
         body += f"Stuur een email naar het volgende mailadres: {requester_email}\n\n"
         body += f"Naam: {name}\n"
         body += f"Vraag: {question or '(geen vraag vastgelegd)'}\n\n"
-        body += "=" * 50 + "\n"
-        body += "COMPLETE CONVERSATION HISTORY\n"
-        body += "=" * 50 + "\n\n"
-        body += f"Bot: {welcome_msg}\n\n"
-
-        if session_history:
-            for msg in session_history:
-                role = msg.get('role', 'unknown')
-                content = msg.get('content', '')
-                prefix = "Customer" if role == 'user' else "Bot"
-                body += f"{prefix}: {content}\n\n"
-        else:
-            body += "(No further conversation history)\n"
+        body += format_transcript(session_history)
 
         # Send via MailerSend API
         headers = {
