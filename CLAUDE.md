@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 277 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 283 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -304,6 +304,20 @@ ticket requester — both accepted risks while the cookie is HttpOnly + SameSite
 and production runs in email mode. **PII in chat logs** — only email addresses are
 redacted (see Conventions); names and phone numbers stay because colleagues read the
 logs in the portal. Decided 2026-10-09 (Wilco): keep it that way.
+
+### Chatlog-analyse 2026-10-09 (38 real conversations after the rebrand)
+
+Plan and findings: [improvement-plan/CHATLOG-ANALYSE-2026-10-09.md](improvement-plan/CHATLOG-ANALYSE-2026-10-09.md).
+
+| Commit | What |
+|---|---|
+| `5009483` | KB: bigbags fall under free shipping from € 50 (one session said they did not); tuinaarde settles 15–20 % |
+| `da912a4` | `RESTOCK_RE` above tracking; re-ordering is `pre_purchase`; "nog niet besteld" leaves the tracking flow; no email → ask for a phone number (customer service calls back, Wilco 2026-10-09); a reference sent after the handoff is forwarded once (`_forward_addendum`); honest answer to "praat ik met een AI?" |
+
+Still open: fase 3 of that plan — the RAG path asks the LLM for the language of *every*
+message (`app.py`, `detect_language` before `get_answer`), so "order PGBE-12" turned a
+Dutch conversation English. Needs `evaluate_rag.py` before and after. "PGBE-…" is not a
+reference from the webshop or the carrier (Wilco); unknown origin.
 
 ### What this taught, and is still true
 
