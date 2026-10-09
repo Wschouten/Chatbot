@@ -322,7 +322,7 @@ HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
 # The word gap was {0,5}, which failed on real sentences: "als ik deze ochtend frans
 # boomschors 1 kuub bestel" has six words in between (sess_7Xo9Rz).
 PRE_PURCHASE_RE = re.compile(
-    r'\b(als ik (?:\w+\s+){0,10}bestel'
+    r'\b(als (?:ik|we|wij) (?:\w+\s+){0,10}bestel'
     r'|als ik (een )?bestelling (zou )?plaatsen'
     r'|wanneer kan ik (het )?verwachten als'
     r'|indien ik bestel'
@@ -337,7 +337,7 @@ PRE_PURCHASE_RE = re.compile(
     re.IGNORECASE
 )
 TRACKING_INTENT_RE = re.compile(
-    r'\b(waar is|waar blijft|status van|wanneer komt|wanneer wordt|hoe laat komt'
+    r'\b(waar is|waar blijft|status van|wanneer komt|hoe laat komt'
     r'|hoe laat komen|wanneer komen jullie|komen brengen|zouden.*brengen'
     r'|vandaag.*lever|vandaag.*bezorg|vandaag.*brengen'
     r'|hoe laat.*lever|hoe laat.*bezorg'
@@ -346,7 +346,10 @@ TRACKING_INTENT_RE = re.compile(
     r'|onze (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
     r'|uw (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
     r'|jullie (pakketje|pakket|bestelling|zending|order|bezorging|levering)'
-    r'|wanneer kunnen'
+    # Bare "wanneer kunnen/wordt" also caught pre-purchase questions ("Wanneer kunnen
+    # jullie leveren in Friesland?", audit 2026-10-09), so an order noun is required.
+    r'|wanneer\s+(kunnen|kan|wordt|worden)\s+(\w+\s+){0,2}(de|onze|mijn|bestelling|order|zending)'
+    r'|wanneer\s+(kunnen|kan)\s+(ik|we|wij)\s+(\w+\s+){0,2}verwachten'
     r'|binnenkrijgen|binnen\s+krijgen'
     r'|bezorgd worden|wanneer bezorgd|wordt bezorgd'
     r'|track|where is my|my order|my package|my delivery|when will i receive|shipped)\b',
@@ -401,8 +404,20 @@ PICKUP_RE = re.compile(
 # StatusWeb codes are long digit strings, often pasted with spaces ("420 836 0360").
 SHIPMENT_NUMBER_RE = re.compile(r'\b(\d[\d\s.\-]{6,24}\d)\b')
 # Order references carry a prefix: BS9940, #12345.
-ORDER_REF_RE = re.compile(r'\b([A-Za-z]{2,3}\s?\d{3,8})\b')
+# A space between prefix and digits only after a capitalised prefix ("BS 6049"):
+# with any prefix, "wel 2000 liter" and "dan 3500 kg" came out as order references
+# WEL2000 / DAN3500.
+ORDER_REF_RE = re.compile(r'\b([A-Za-z]{2,3}\d{3,8}|[A-Z]{2,3}\s\d{3,8})\b')
 BARE_NUMBER_RE = re.compile(r'\b(\d{4,7})\b')
+# Numbers that are never a shipment or order number: dates and quantities. While the
+# bot waited for a shipment number, "Wat kost 1000 liter?" was read as order number
+# 1000 and "besteld op 12-05-2026" as StatusWeb code 12052026 (audit 2026-10-09).
+NOT_AN_ORDER_NUMBER_RE = re.compile(
+    r'\b\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}\b'
+    r'|\b\d+(?:[.,]\d+)?\s*(?:liters?|l|m3|m²|m2|kuub|kg|cm|mm|zakken|zak|bigbags?|big\s+bags?|euro|eur)\b'
+    r'|€\s*\d+(?:[.,]\d+)?',
+    re.IGNORECASE,
+)
 
 
 def extract_order_identifier(message: str) -> tuple[str | None, bool]:
@@ -414,7 +429,8 @@ def extract_order_identifier(message: str) -> tuple[str | None, bool]:
     re-prompts instead of echoing a random word back as an order number.
     """
     # Strip trailing punctuation (e.g. "6655?") before matching
-    cleaned = re.sub(r'([A-Za-z0-9])[?!.,]+(?=\s|$)', r'\1', message)
+    cleaned = NOT_AN_ORDER_NUMBER_RE.sub(' ', message)
+    cleaned = re.sub(r'([A-Za-z0-9])[?!.,]+(?=\s|$)', r'\1', cleaned)
 
     match = SHIPMENT_NUMBER_RE.search(cleaned)
     if match:
@@ -555,7 +571,9 @@ ORDER_ADMIN_RE = re.compile(
 ESCALATE_TOPIC_RE = re.compile(
     # Manco / partial delivery — sess_Q7lJWI, sess_HLzFUh, sess_akcz2, sess_07xNFB
     r'te\s+weinig[^.?!]{0,40}(geleverd|ontvangen|gekregen|bezorgd|besteld|inzat|in\s+gezeten)'
-    r'|(maar|slechts)\s+\d+\s+(van\s+de\s+|zakken|bigbags?|big\s+bags?|pallets?|kuub|m3)'
+    # Anchored to a delivery verb: "ik heb maar 3 kuub nodig" is a purchase question.
+    r'|(maar|slechts)\s+\d+\s+van\s+de\s+'
+    r'|(maar|slechts)\s+\d+\s+(\w+\s+){0,3}(geleverd|ontvangen|gekregen|bezorgd|gebracht|afgeleverd|binnen)'
     r'|manco|halve\s+(levering|bestelling)'
     r'|helft\s+(\w+\s+){0,2}(geleverd|ontvangen|bezorgd|binnen)'
     r'|niet\s+alles\s+(geleverd|ontvangen|gekregen|bezorgd)'
@@ -1324,14 +1342,21 @@ def _handle_chat(request_id: str) -> Response:
 
     if any(state_data.get(k) for k in GUIDED_FLOW_KEYS):
         flow_lang = state_data.get('language', 'nl')
-        if PHONE_CONTACT_RE.search(user_message):
+        if (HUMAN_ESCALATION_RE.search(user_message) or ORDER_ADMIN_RE.search(user_message)
+                or ESCALATE_TOPIC_RE.search(user_message)):
+            # Leave the flow and let the intent router below hand over with its own
+            # opening. Inside a flow these used to get "Ik zie geen zendingnummer"
+            # ("ik wil mijn bestelling annuleren", "de zakken kwamen kapot aan"), and
+            # "jullie telefoon werkt niet" got our number (audit 2026-10-09).
+            _clear_guided_flows()
+            save_session_state(session_id, state_data)
+        elif PHONE_CONTACT_RE.search(user_message):
             _clear_guided_flows()
             resp = _phone_response(flow_lang)
             _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
-
-        if HUMAN_ESCALATION_RE.search(user_message) or FRUSTRATION_RE.search(user_message):
+        elif FRUSTRATION_RE.search(user_message):
             resp = _start_handoff(flow_lang, user_message)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
@@ -1750,7 +1775,14 @@ def _handle_chat(request_id: str) -> Response:
 
     # Step 1 of 2: we asked for the shipment number, waiting for user to provide it
     if state_data.get('awaiting_order_number'):
-        if _tracking_timeout(state_data.get('tracking_timestamp', '')):
+        # A question without any number is a different question, not a failed
+        # attempt at the shipment number: answer it instead of re-prompting.
+        other_question = (
+            '?' in user_message
+            and not extract_order_identifier(user_message)[0]
+            and not NO_SHIPMENT_NUMBER_RE.search(user_message)
+        )
+        if other_question or _tracking_timeout(state_data.get('tracking_timestamp', '')):
             _clear_tracking_state()
             # Fall through to normal processing
         else:

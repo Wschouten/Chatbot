@@ -323,3 +323,60 @@ def test_declining_the_handoff_stops_the_loop_escalation():
     data = _post(client, "Hoe dik moet ik strooien?", sid)
 
     assert data["response"] == "RAG answer", data["response"]
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — router: pre-purchase questions, quantities and dates, flow escapes
+# ---------------------------------------------------------------------------
+
+def test_delivery_area_question_is_not_tracking():
+    from app import classify_intent
+
+    assert classify_intent("Wanneer kunnen jullie leveren in Friesland?") != "tracking"
+    assert classify_intent("Heb donderdag palen besteld, wanneer kan ik deze verwachten?") == "tracking"
+
+
+def test_needing_only_a_little_is_not_a_manco():
+    from app import classify_intent
+
+    assert classify_intent("Ik heb maar 3 kuub nodig, wat kost dat?") != "escalate_topic"
+    assert classify_intent("Ik had 3 bigbags besteld maar er is maar 1 geleverd") == "escalate_topic"
+
+
+def test_quantities_and_dates_are_not_order_numbers():
+    from app import extract_order_identifier
+
+    assert extract_order_identifier("Wat kost 1000 liter boomschors?") == (None, False)
+    assert extract_order_identifier("ik heb op 12-05-2026 besteld") == (None, False)
+    assert extract_order_identifier("ik heb wel 2000 liter nodig") == (None, False)
+    assert extract_order_identifier("het gaat om BS 6049") == ("BS6049", False)
+    assert extract_order_identifier("400000001") == ("400000001", True)
+
+
+def test_order_change_inside_tracking_flow_reaches_a_colleague():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state())
+    data = _post(client, "ik wil mijn bestelling annuleren", sid)
+
+    assert "zendingnummer" not in data["response"].lower()
+    assert flask_app.get_session_state(sid).get("state") == "awaiting_name"
+
+
+def test_broken_phone_inside_tracking_flow_is_escalated_not_answered_with_our_number():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state())
+    _post(client, "jullie telefoon werkt niet", sid)
+
+    assert flask_app.get_session_state(sid).get("state") == "awaiting_name"
+
+
+def test_other_question_inside_tracking_flow_is_answered():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state())
+    data = _post(client, "Hoe dik moet ik boomschors strooien?", sid)
+
+    assert data["response"] == "RAG answer"
+    assert not flask_app.get_session_state(sid).get("awaiting_order_number")
