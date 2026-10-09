@@ -1,5 +1,6 @@
 """Shipping status API module - Van Den Heuvel / StatusWeb SOAP Integration."""
 import logging
+import re
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
@@ -31,6 +32,26 @@ SW_UNKNOWN_TRANSPORT_NUMBER = -150
 SW_NO_STATUSES_FOUND = -200
 SW_SESSION_EXPIRED = -96
 SW_INVALID_SESSION = -98
+
+
+def classify_status(status_desc: str) -> str:
+    """Map a StatusWeb StatusOmschrijving onto delivered / in_transit / at_depot / unknown.
+
+    Negations and future forms first: "Niet afgeleverd - klant niet thuis" and "wordt
+    bezorgd" contain "afgeleverd"/"bezorgd" and were told to the customer as
+    "✅ afgeleverd! 🎉" (audit 2026-10-09). Those, and anything unrecognised, become
+    "unknown", which gets the neutral reply quoting StatusWeb's own description.
+    """
+    status_lower = status_desc.lower()
+    if re.search(r'\b(niet|geen|wordt|worden|poging|mislukt|retour|not|failed)\b', status_lower):
+        return "unknown"
+    if any(w in status_lower for w in ["afgeleverd", "delivered", "bezorgd"]):
+        return "delivered"
+    if any(w in status_lower for w in ["onderweg", "transit", "geladen", "vertrokken"]):
+        return "in_transit"
+    if any(w in status_lower for w in ["depot", "hub", "sorteer"]):
+        return "at_depot"
+    return "unknown"
 
 
 class ShippingAPIClient:
@@ -219,15 +240,7 @@ class ShippingAPIClient:
             status_desc = latest.get("status_description", "onbekend")
 
             # Determine simplified status category
-            status_lower = status_desc.lower()
-            if any(w in status_lower for w in ["afgeleverd", "delivered", "bezorgd"]):
-                simplified_status = "delivered"
-            elif any(w in status_lower for w in ["onderweg", "transit", "geladen", "vertrokken"]):
-                simplified_status = "in_transit"
-            elif any(w in status_lower for w in ["depot", "hub", "sorteer"]):
-                simplified_status = "at_depot"
-            else:
-                simplified_status = "in_transit"  # Default for active shipments
+            simplified_status = classify_status(status_desc)
 
             details = {
                 "status_description": status_desc,

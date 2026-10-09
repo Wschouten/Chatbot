@@ -35,6 +35,13 @@ _DEPTH_RE = re.compile(
     rf'({_NUMBER})\s*({_UNIT})\b\s*(?:dik|diep|hoog|laag|laagdikte)?',
     re.IGNORECASE,
 )
+# What may follow a number without a unit for it to still count as a dimension:
+# a dimension word ("0.8 breed") or a multiplication ("4 x 5 m").
+_BARE_DIM_FOLLOWER_RE = re.compile(
+    r'\s*(?:breed|brede|lang|lange|diep|dik|hoog|laag|wide|long|deep|thick|high'
+    r'|x|×|\*|bij|op|by)\b',
+    re.IGNORECASE,
+)
 _ASKS_VOLUME_RE = re.compile(
     r'\b(kuub|m3|m³|kubieke?|volume|hoeveel\s+(heb|hebben|moet|zakken|bigbags?|big\s?bags?)'
     r'|hoeveel\s+\w+\s+(nodig|heb)|dik|diep|laagdikte|laag\s+van'
@@ -91,8 +98,12 @@ def compute_volume(message: str) -> str | None:
         unit = match.group(2)
         if unit:
             dims.append((_to_float(match.group(1)) * _TO_METRES[unit.lower()], True))
-        else:
+        elif _BARE_DIM_FOLLOWER_RE.match(message, match.end()):
             dims.append((_to_float(match.group(1)), False))
+        else:
+            # A bare number that is not a dimension is a count: "2 borders van 10 m bij
+            # 1 m" was computed as 2 m x 10 m x 1 m (audit 2026-10-09). Don't guess.
+            return None
 
     if len(dims) != 3:
         return None

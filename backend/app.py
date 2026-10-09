@@ -364,6 +364,12 @@ CLOSING_RE = re.compile(
     r'great|perfect|alright|got it)\b[!.,]?\s*$',
     re.IGNORECASE
 )
+# A short yes — after a question from the bot it accepts the offer, it does not close.
+AFFIRMATIVE_RE = re.compile(
+    r'^\s*(?:ok(?:é|e|ay)?|prima|top|goed|is\s+goed|ja(?:\s+graag)?|graag|doe\s+maar'
+    r'|yes|sure|alright|great|perfect)\b[!.,]?\s*$',
+    re.IGNORECASE,
+)
 # Detects when user says they don't have / can't provide the requested number
 HAS_SHIPMENT_NUMBER_RE = re.compile(
     r'\b(ik heb een? (zendingnummer|zendingsnummer|trackingnummer|tracking\s*nummer|track.*trace)'
@@ -2048,8 +2054,21 @@ def _handle_chat(request_id: str) -> Response:
             )
             return _reply(response_text)
 
+    # "Oké" right after the bot asked something is a yes, not a goodbye: the bot
+    # offered a colleague, the customer said "Oké" and got "Graag gedaan!" (audit
+    # 2026-10-09). A yes to a colleague starts the handoff; any other yes goes to the
+    # RAG, which sees the question in the history.
+    last_bot = next((t.get("content", "") for t in reversed(chat_history)
+                     if t.get("role") == "assistant"), "")
+    answers_a_question = (last_bot.rstrip().endswith("?")
+                          and AFFIRMATIVE_RE.match(user_message.strip()))
+    if answers_a_question and re.search(r'\b(collega|colleague)', last_bot, re.IGNORECASE):
+        last_question = next((t.get("content", "") for t in reversed(chat_history)
+                              if t.get("role") == "user"), user_message)
+        return _reply(_start_handoff(user_lang, last_question, reason='accepted_offer'))
+
     # Closing/farewell detection — skip RAG, reply with short canned response
-    if CLOSING_RE.match(user_message.strip()):
+    if CLOSING_RE.match(user_message.strip()) and not answers_a_question:
         consecutive_closings = state_data.get('consecutive_closings', 0) + 1
         state_data['consecutive_closings'] = consecutive_closings
         user_lang = state_data.get('language', 'nl')

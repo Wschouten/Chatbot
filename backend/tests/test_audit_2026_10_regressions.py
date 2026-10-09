@@ -402,3 +402,62 @@ def test_every_canned_reply_is_recorded_in_history():
         history = flask_app.get_session_state(sid).get("chat_history", [])
         assert history[-2:][0]["content"] == message, f"turn not recorded: {message!r}"
         assert len(history) == min(2 * i, 10)
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — "oké" after a question, unit-less counts, StatusWeb negations
+# ---------------------------------------------------------------------------
+
+def _after_bot(question):
+    return {"state": "inactive", "language": "nl", "chat_history": [
+        {"role": "user", "content": "Mijn bigbag is gescheurd"},
+        {"role": "assistant", "content": question},
+    ]}
+
+
+def test_ok_to_a_colleague_offer_starts_the_handoff():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _after_bot("Wil je dat ik een collega laat meekijken?"))
+    data = _post(client, "Oké", sid)
+
+    assert "graag gedaan" not in data["response"].lower()
+    state = flask_app.get_session_state(sid)
+    assert state.get("state") == "awaiting_name"
+    assert state.get("question") == "Mijn bigbag is gescheurd"
+
+
+def test_ok_to_another_question_goes_to_the_rag():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _after_bot("Zal ik uitrekenen hoeveel je nodig hebt?"))
+    data = _post(client, "ok", sid)
+    assert data["response"] == "RAG answer"
+
+
+def test_thanks_still_closes():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _after_bot("Kan ik je nog ergens mee helpen?"))
+    data = _post(client, "bedankt", sid)
+    assert "graag gedaan" in data["response"].lower()
+
+
+def test_unit_less_count_is_not_a_dimension():
+    from volume_calc import compute_volume
+
+    assert compute_volume("hoeveel bigbags voor 2 borders van 10 m bij 1 m?") is None
+    assert "2 m3" in compute_volume("4 bij 5 meter en 10 cm dik, hoeveel kuub")
+
+
+def test_statusweb_negation_is_not_reported_as_delivered():
+    from app import format_shipping_response
+    from shipping_api import classify_status
+
+    for desc in ("Niet afgeleverd - klant niet thuis", "Wordt bezorgd", "Iets onbekends"):
+        reply = format_shipping_response(
+            {"success": True, "status": classify_status(desc),
+             "details": {"status_description": desc}}, "400000001")
+        assert "🎉" not in reply, (desc, reply)
+        assert desc in reply
+    assert classify_status("Afgeleverd") == "delivered"
