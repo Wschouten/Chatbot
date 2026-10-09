@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 275 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 277 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -175,6 +175,11 @@ verify `/health`.
 
 - Gunicorn: 1 worker, 4 threads, 120s timeout. The container starts as root only to
   `chown` the Railway-mounted volume, then drops to `appuser` via `gosu`.
+  **This only holds when the Railway service has no Custom Start Command.** On
+  2026-10-09 it had `sh -c 'gunicorn -w 1 -b 0.0.0.0:${PORT:-5000} app:app'`, which
+  overrides the Dockerfile `CMD`: one sync worker (one request at a time), a 30s
+  timeout, no access log, and the app running as root. Check with
+  `railway status --json` (`startCommand`) and keep the field empty.
 - Volume `chatbot-volume` is mounted at `/app/backend/data`, so logs, sessions,
   `portal.db` and `chroma_db` persist across deploys.
 - `/health` reporting `"environment": "local"` on Railway is cosmetic — `/.dockerenv`
@@ -253,7 +258,7 @@ which only delivers to the account's own address. Any other recipient is accepte
 MailerSend, logged as "sent successfully", and never delivered — that is how the first
 test escalation to boomschors.nl vanished.
 
-### Code audit 2026-10-09 — Fase 1 and 2 done
+### Code audit 2026-10-09 — all three phases done
 
 A read-only, adversarially verified audit of the whole repo:
 [AUDIT-2026-10-09.md](AUDIT-2026-10-09.md) (41 findings, phased plan). Fase 1 is
@@ -281,11 +286,23 @@ Fase 2:
 | `880bb2c` | No names in stdout logs; portal.db orphans purged at startup; only `/portal/js/` served; CSV formula escaping |
 | `c294f8d` | Portal language wired up (`lang` in each log entry, `_conversation_from_log`); persona vars out of `.env.example` |
 
-Still open: **1.4** — rate limits are probably keyed on Railway's proxy IP (no
-`ProxyFix`), so all visitors may share one bucket; check the access log before fixing.
-**PII in chat logs** — only email addresses are redacted (see Conventions); names and
-phone numbers stay, because colleagues read these logs in the portal. A policy decision,
-not a bug. Then Fase 3 (dead code, ~200 lines left).
+C3 / 1.4 and Fase 3:
+
+| Commit | What |
+|---|---|
+| `3b9dd75`, `115da8e` | `ProxyFix(x_for=2)` — measured in production: `remote_addr` was Railway's `100.64.0.7` for everyone, and `X-Forwarded-For` arrives as `<visitor>, <edge node>`. A spoofed header is ignored (verified). `/widget.js` and `/health` are exempt from rate limits |
+| `3f74666` | Unused label POST/DELETE, `_count_tokens`, unused chunk metadata, `Actiepunten.md` |
+| `8f5fbfc` | One `mocks.py`; `use_mock` means the same everywhere and `/health` says `not_configured`; one `format_transcript` for email + Zendesk; dead `BrandConfig` fields |
+| `e9fc7f8` | `SUPPORT_PHONE` / `SUPPORT_EMAIL` instead of ten literal copies; one `_expired` |
+
+Deliberately left: cut 3 (merge the three language detectors) changes retrieval and
+needs `evaluate_rag.py` before and after, which bills OpenAI; cut 9 (one phone block
+instead of three) is small and each block now sits at a deliberate priority. Logout
+does not revoke the 4-hour admin cookie, and Zendesk mode would make the chat email the
+ticket requester — both accepted risks while the cookie is HttpOnly + SameSite=Strict
+and production runs in email mode. **PII in chat logs** — only email addresses are
+redacted (see Conventions); names and phone numbers stay because colleagues read the
+logs in the portal. A policy decision, not a bug.
 
 ### What this taught, and is still true
 
