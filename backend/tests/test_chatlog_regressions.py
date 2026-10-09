@@ -461,3 +461,13 @@ class TestChatlog20261009:
 
         assert "AI" in data["response"]
         assert "collega" in data["response"]
+
+    def test_sess_kyl057_bigbag_shipping_cost_question_gets_the_fixed_rates(self):
+        """Retrieval for a product-specific shipping question returns the product page;
+        the FAQ rates are injected so the model cannot answer "kan ik hier niet zien"."""
+        from rag_engine import _shipping_block
+
+        block = _shipping_block("Wat zijn de bezorgkosten van een big bag 1m3 bemeste tuinaarde?", "nl")
+        assert "€ 50" in block and "bigbag" in block, (
+            "FAQ GCG.txt lost its '### Verzendkosten' section — the injection is silently gone")
+        assert _shipping_block("Hoe dik moet ik boomschors strooien?", "nl") == ""

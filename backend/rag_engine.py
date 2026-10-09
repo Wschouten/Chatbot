@@ -122,6 +122,37 @@ def _retry_instruction(problem: str, language: str) -> str:
     )
 
 
+_SHIPPING_COST_RE = re.compile(
+    r'\b(bezorgkosten|verzendkosten|leveringskosten|bezorg\w*\s+kost|verzend\w*\s+kost'
+    r'|wat\s+kost\s+(de\s+)?(bezorging|verzending|levering)|gratis\s+(bezorg|verzend|lever)\w*'
+    r'|shipping\s+(costs?|fee)|delivery\s+(costs?|fee))',
+    re.IGNORECASE,
+)
+_FAQ_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_base", "FAQ GCG.txt")
+
+
+def _shipping_block(query: str, language: str) -> str:
+    """The fixed shipping rates, handed to the model as a fact for any shipping-cost
+    question. Retrieval for "bezorgkosten big bag bemeste tuinaarde" returns the
+    product page, not the FAQ, and the model then stretched the delivery-*date* rule
+    ("kun je niet zien, zie het afrekenen") to the cost (2026-10-09, after a KB fix).
+    Read from the FAQ itself, so the knowledge base stays the only source.
+    """
+    if not _SHIPPING_COST_RE.search(query):
+        return ""
+    try:
+        with open(_FAQ_PATH, encoding="utf-8-sig") as f:
+            text = f.read()
+    except OSError:
+        return ""
+    match = re.search(r"### Verzendkosten\n(.*?)(?=\n### |\Z)", text, re.DOTALL)
+    if not match:
+        return ""
+    label = ("SHIPPING COSTS (fixed rates — state them)" if language == 'en'
+             else "VERZENDKOSTEN (vaste tarieven — noem ze gewoon)")
+    return f"\n\n{label}:\n{match.group(1).strip()}"
+
+
 def _calculation_block(query: str, language: str) -> str:
     """Pre-computed arithmetic, handed to the model as a fact rather than a task.
 
@@ -1118,7 +1149,7 @@ class RagEngine:
             conversation_summary = self._build_conversation_summary(chat_history, language)
             user_content = (
                 f"Context:\n{context}\n{conversation_summary}"
-                f"{_calculation_block(query, language)}\n\nQuestion: {query}"
+                f"{_calculation_block(query, language)}{_shipping_block(query, language)}\n\nQuestion: {query}"
             )
         elif chat_history:
             # No RAG context available, but we have conversation history.
@@ -1174,7 +1205,7 @@ class RagEngine:
             conversation_summary = self._build_conversation_summary(chat_history, language)
             user_content = (
                 f"Geen kennisbank context beschikbaar.{conversation_summary}"
-                f"{_calculation_block(query, language)}\n\nQuestion: {query}"
+                f"{_calculation_block(query, language)}{_shipping_block(query, language)}\n\nQuestion: {query}"
             )
         else:
             return "__UNKNOWN__"
