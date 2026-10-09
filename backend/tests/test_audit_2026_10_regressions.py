@@ -226,3 +226,65 @@ def test_tracking_question_with_shipment_number_is_looked_up_right_away():
 
     shipping.get_shipment_status.assert_called_once_with("4208360360")
     assert "zendingnummer** door" not in data["response"]
+
+
+# ---------------------------------------------------------------------------
+# 1.6: a phone mention during the handoff never wipes it
+# ---------------------------------------------------------------------------
+
+def _handoff_state(state, **extra):
+    s = {"state": state, "language": "nl", "question": "Mijn zakken kwamen kapot aan",
+         "chat_history": []}
+    s.update(extra)
+    return s
+
+
+def test_customer_number_during_handoff_is_forwarded():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _handoff_state("awaiting_email", name="Jan"))
+    with patch.object(flask_app, "ESCALATION_METHOD", "email"), \
+         patch.object(flask_app.escalation_client, "send_email",
+                      return_value={"ticket": {}}) as send:
+        data = _post(client, "Ik heb geen mail, je kunt mij telefonisch bereiken op 0612345678", sid)
+
+    assert send.called, "the handoff was dropped instead of escalated"
+    name, _email, question = send.call_args.args[:3]
+    assert name == "Jan"
+    assert "0612345678" in question and "kapot" in question
+    assert "telefonisch" in data["response"]
+    assert "0516" not in data["response"], "answered with our number instead"
+
+
+def test_customer_number_before_the_name_is_kept():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _handoff_state("awaiting_name"))
+    with patch.object(flask_app, "ESCALATION_METHOD", "email"), \
+         patch.object(flask_app.escalation_client, "send_email",
+                      return_value={"ticket": {}}) as send, \
+         patch.object(flask_app.rag_engine, "detect_ticket_intent", return_value="giving_name"), \
+         patch.object(flask_app.rag_engine, "extract_name", return_value="Jan"):
+        first = _post(client, "bel me maar op 0612345678", sid)
+        assert "naam" in first["response"].lower()
+        _post(client, "Jan", sid)  # no email asked: the number is enough
+
+    assert send.called
+    assert "0612345678" in send.call_args.args[2]
+
+
+def test_asking_our_number_during_handoff_pauses_it():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _handoff_state("awaiting_email", name="Jan"))
+    data = _post(client, "Wat is jullie telefoonnummer?", sid)
+
+    assert "0516" in data["response"]
+    assert flask_app.get_session_state(sid).get("name") == "Jan", "the handoff was wiped"
+
+
+def test_offering_your_own_number_is_not_a_question_about_ours():
+    from app import PHONE_CONTACT_RE
+
+    assert not PHONE_CONTACT_RE.search("Mag ik je mijn telefoonnummer geven?")
+    assert PHONE_CONTACT_RE.search("Wat is je telefoonnummer?")

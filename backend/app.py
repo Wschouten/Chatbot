@@ -461,7 +461,9 @@ PHONE_CONTACT_RE = re.compile(
     r'\b(telefonisch|telefoon|bellen|bel\s+mij|bel\s+me|opbellen|per\s+telefoon|telefooncontact)\b'
     # Only *our* number: "telefoonnummer" alone also catches a customer giving
     # their own ("telefoonnummer is 06-..."), twice in the chat exports.
-    r'|\b(jullie|uw|je)\s+(\w+\s+)?telefoonnummer\b|\bwat\s+is\s+(het\s+)?telefoonnummer\b|\bwelk\s+telefoonnummer\b'
+    # Not "je … telefoonnummer": "Mag ik je mijn telefoonnummer geven?" is the customer
+    # offering theirs. "wat is je telefoonnummer" is covered by the `wat is` branch.
+    r'|\b(jullie|uw)\s+(\w+\s+)?telefoonnummer\b|\bwat\s+is\s+(het\s+|je\s+)?telefoonnummer\b|\bwelk\s+telefoonnummer\b'
     r'|\b(phone|call\s+me|telephone|ring\s+me|call\s+you|over\s+the\s+phone|by\s+phone)\b',
     re.IGNORECASE
 )
@@ -1347,6 +1349,10 @@ def _handle_chat(request_id: str) -> Response:
         """Send the handoff to a human and reset the session. Shared by both paths
         into the handoff (name→email, and email-given-as-name)."""
         original_q = state_data.get('question', '')
+        phone = state_data.get('phone')
+        if phone:
+            original_q = f"{original_q}\n\nTelefoonnummer klant (wil gebeld worden): {phone}".strip()
+            email = email or "(geen e-mailadres — bel de klant)"
         try:
             if ESCALATION_METHOD == "zendesk":
                 result = escalation_client.create_ticket(name, email, original_q, chat_history)
@@ -1370,6 +1376,8 @@ def _handle_chat(request_id: str) -> Response:
             'handoff_done': bool(result),
             'name': name,
             'email': email,
+            # The number already went out with this escalation; don't forward it twice.
+            'phone_forwarded': bool(phone and result),
         })
 
         if result:
@@ -1379,9 +1387,10 @@ def _handle_chat(request_id: str) -> Response:
                         if lang == 'nl' else
                         f"Great! I've created ticket #{ticket_id} for you. A colleague will be in touch shortly.")
             else:
-                resp = ("Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk contact met je op via e-mail."
+                via_nl, via_en = ("telefonisch", "by phone") if phone else ("via e-mail", "via email")
+                resp = (f"Top! Ik heb je bericht doorgestuurd naar een collega. We nemen zo snel mogelijk {via_nl} contact met je op."
                         if lang == 'nl' else
-                        "Great! I've forwarded your message to a colleague. We'll get in touch via email as soon as possible.")
+                        f"Great! I've forwarded your message to a colleague. We'll get in touch {via_en} as soon as possible.")
         else:
             resp = ("Sorry, er ging iets mis bij het versturen van je bericht. Neem alsjeblieft direct contact met ons op."
                     if lang == 'nl' else
@@ -1428,13 +1437,38 @@ def _handle_chat(request_id: str) -> Response:
     # ---------------------------------------------------------
     # STATE: AWAITING_NAME (with flexible intent detection)
     # ---------------------------------------------------------
-    if current_state == 'awaiting_name':
+    def _handoff_phone_reply() -> Response | None:
+        """A phone mention while the handoff collects name/email.
+
+        A number the customer gives is *their* contact detail: it goes to the
+        colleague with the escalation. A question about our phone gets the phone
+        answer but only pauses the handoff — it used to wipe it, so "ik heb geen
+        mail, bel me op 06…" lost both the handoff and the number (audit 1.6).
+        """
+        number = PHONE_NUMBER_RE.search(user_message)
+        if number:
+            state_data['phone'] = number.group(0)
+            if current_state == 'awaiting_email' or state_data.get('name'):
+                return _finish_escalation(
+                    state_data.get('name', 'Unknown'), state_data.get('email', ''), user_lang)
+            save_session_state(session_id, state_data)
+            resp = ("Dank je, je telefoonnummer heb ik. 👍 En wat is je naam?"
+                    if user_lang == 'nl' else
+                    "Thanks, I've got your phone number. 👍 And what's your name?")
+            _log_chat_message(session_id, request_id, user_message, resp)
+            return jsonify({"response": resp, "request_id": request_id})
         if PHONE_CONTACT_RE.search(user_message):
-            state_data = {'state': 'inactive', 'language': user_lang, 'chat_history': chat_history}
+            _pause_handoff()
             resp = _phone_response(user_lang)
             _remember_turn(resp)
             _log_chat_message(session_id, request_id, user_message, resp)
             return jsonify({"response": resp, "request_id": request_id})
+        return None
+
+    if current_state == 'awaiting_name':
+        phone_reply = _handoff_phone_reply()
+        if phone_reply:
+            return phone_reply
 
         # Use LLM to understand what the user actually wants
         intent = rag_engine.detect_ticket_intent(user_message)
@@ -1476,8 +1510,8 @@ def _handle_chat(request_id: str) -> Response:
 
             # Email already captured (given in place of the name) — escalate now
             # instead of asking for something we already have.
-            if state_data.get('email'):
-                return _finish_escalation(clean_name, state_data['email'], user_lang)
+            if state_data.get('email') or state_data.get('phone'):
+                return _finish_escalation(clean_name, state_data.get('email', ''), user_lang)
 
             state_data['state'] = 'awaiting_email'
             save_session_state(session_id, state_data)
@@ -1490,12 +1524,9 @@ def _handle_chat(request_id: str) -> Response:
     # STATE: AWAITING_EMAIL (with decline detection)
     # ---------------------------------------------------------
     if current_state == 'awaiting_email':
-        if PHONE_CONTACT_RE.search(user_message):
-            state_data = {'state': 'inactive', 'language': user_lang, 'chat_history': chat_history}
-            resp = _phone_response(user_lang)
-            _remember_turn(resp)
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+        phone_reply = _handoff_phone_reply()
+        if phone_reply:
+            return phone_reply
 
         email = user_message.strip()
 
