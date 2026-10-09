@@ -613,10 +613,11 @@ def test_client_ip_comes_from_the_proxy_header(caplog):
         flask_app.app.test_client().get(
             "/admin/api/conversations",
             environ_base={"REMOTE_ADDR": "100.64.0.7"},
-            headers={"X-Forwarded-For": "23.249.238.92"},
+            # A spoofed entry, then the visitor, then Railway's edge node — as measured.
+            headers={"X-Forwarded-For": "1.1.1.1, 23.249.238.92, 152.233.13.164"},
         )
     assert "from 23.249.238.92" in caplog.text
-    assert "100.64.0.7" not in caplog.text
+    assert "100.64.0.7" not in caplog.text and "1.1.1.1" not in caplog.text
 
 
 def test_widget_is_not_rate_limited():

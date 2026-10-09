@@ -83,11 +83,13 @@ app = Flask(
     template_folder=str(FRONTEND_DIR / "templates"),
     static_folder=str(FRONTEND_DIR / "static"),
 )
-# Railway's edge proxy is the direct peer, so request.remote_addr was 100.64.0.x for
-# every visitor: all rate limits were one shared bucket and the admin logs recorded
-# the proxy (audit 2026-10-09, C3 — confirmed against production). Trust exactly one
-# hop of X-Forwarded-For, the one Railway appends, so a client cannot spoof it.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
+# Railway's proxy is the direct peer, so request.remote_addr was 100.64.0.x for every
+# visitor: all rate limits were one shared bucket and the admin logs recorded the
+# proxy (audit 2026-10-09, C3 — confirmed against production). Railway puts two hops
+# in front of the app and X-Forwarded-For arrives as "<visitor>, <edge node>"
+# (measured: x_for=1 gave 152.233.13.x, the edge). Trust exactly those two hops;
+# anything a client sends itself lands further left and is ignored.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=2, x_proto=1)
 
 
 # =============================================================================
