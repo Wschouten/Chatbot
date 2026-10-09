@@ -361,14 +361,6 @@ CLOSING_RE = re.compile(
     r'great|perfect|alright|got it)\b[!.,]?\s*$',
     re.IGNORECASE
 )
-# Detects when user says they haven't ordered yet
-NO_ORDER_YET_RE = re.compile(
-    r'\b(nog geen bestell|heb nog geen|nog niet besteld|heb nog niet besteld'
-    r'|nog geen order|geen bestelling gedaan'
-    r"|haven'?t ordered|have not ordered|haven'?t placed|no order yet"
-    r'|not ordered yet|not placed yet)\b',
-    re.IGNORECASE,
-)
 # Detects when user says they don't have / can't provide the requested number
 HAS_SHIPMENT_NUMBER_RE = re.compile(
     r'\b(ik heb een? (zendingnummer|zendingsnummer|trackingnummer|tracking\s*nummer|track.*trace)'
@@ -1233,15 +1225,13 @@ def _handle_chat(request_id: str) -> Response:
     # already existed but sat *after* the state machines, so they were unreachable.
     # -------------------------------------------------------------------------
     GUIDED_FLOW_KEYS = (
-        'awaiting_order_number', 'awaiting_shopify_order_number',
-        'awaiting_shopify_postcode', 'awaiting_product_name',
+        'awaiting_order_number', 'awaiting_product_name',
     )
 
     def _clear_guided_flows() -> None:
         """Drop every non-handoff flow key plus its bookkeeping."""
         for key in GUIDED_FLOW_KEYS + (
-            'pending_order_id', 'tracking_timestamp', 'pending_shopify_order_number',
-            'shopify_verification_timestamp', 'product_name_timestamp',
+            'pending_order_id', 'tracking_timestamp', 'product_name_timestamp',
             'pending_product_query', 'stock_candidates', 'flow_attempts',
         ):
             state_data.pop(key, None)
@@ -1566,14 +1556,6 @@ def _handle_chat(request_id: str) -> Response:
         state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
 
-    def _clear_shopify_verification_state() -> None:
-        """Clear all Shopify order verification state keys from the session."""
-        for key in ('awaiting_shopify_order_number', 'awaiting_shopify_postcode',
-                    'pending_shopify_order_number',
-                    'shopify_verification_timestamp', 'flow_attempts'):
-            state_data.pop(key, None)
-        save_session_state(session_id, state_data)
-
     def _stock_timeout(ts_str: str) -> bool:
         """Return True if the stock lookup state has been waiting more than 5 minutes."""
         try:
@@ -1680,103 +1662,61 @@ def _handle_chat(request_id: str) -> Response:
         return {"outcome": "multiple", "products": products}
 
 
-    # WISMO step 1 of 2: waiting for Shopify order number
-    if state_data.get('awaiting_shopify_order_number'):
-        if _tracking_timeout(state_data.get('shopify_verification_timestamp', '')):
-            _clear_shopify_verification_state()
-            # Fall through to normal processing
-        else:
-            user_lang = state_data.get('language', 'nl')
-            order_num_match = re.search(r'#?(\d+)', user_message.strip())
-            if order_num_match:
-                order_number = order_num_match.group(1)
-                state_data.pop('awaiting_shopify_order_number', None)
-                state_data.pop('flow_attempts', None)  # a new step starts with a clean count
-                state_data['pending_shopify_order_number'] = order_number
-                state_data['awaiting_shopify_postcode'] = True
-                state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
-                save_session_state(session_id, state_data)
-                if user_lang == 'en':
-                    response_text = (
-                        "Thanks. What is the **postcode** of the delivery address?"
-                    )
-                else:
-                    response_text = (
-                        "Bedankt. Wat is de **postcode** van het afleveradres?"
-                    )
-            elif NO_ORDER_YET_RE.search(user_message):
-                _clear_shopify_verification_state()
-                save_session_state(session_id, state_data)
-                if user_lang == 'en':
-                    response_text = (
-                        "No problem! Orders are typically delivered within a few working days. "
-                        "For the exact delivery time to your area, please check the webshop at checkout "
-                        "or contact us at klantenservice@boomschors.nl."
-                    )
-                else:
-                    response_text = (
-                        "Geen probleem! Bestellingen worden doorgaans binnen enkele werkdagen geleverd. "
-                        "Voor de exacte levertijd naar jouw regio, check de webshop bij het afrekenen "
-                        "of neem contact op via klantenservice@boomschors.nl."
-                    )
-            else:
-                response_text = _flow_dead_end(user_lang)
-                if response_text is None:
-                    if user_lang == 'en':
-                        response_text = (
-                            "I didn't find an order number in your message. "
-                            "Please enter your **Shopify order number** (e.g. **#12345**)."
-                        )
-                    else:
-                        response_text = (
-                            "Ik zie geen bestelnummer in je bericht. "
-                            "Vul je **bestelnummer** in (bijv. **#12345**)."
-                        )
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
+    def _statusweb_reply(order_id: str, user_lang: str, prior_attempts: int | None = None) -> str:
+        """Look a StatusWeb shipment number up and phrase the result. Shared by the
+        awaiting-number step and a tracking question that already carries the number."""
+        client = get_shipping_client()
+        result = client.get_shipment_status(order_id)
 
-    # WISMO step 2 of 2: order number stored, waiting for postcode
-    if state_data.get('awaiting_shopify_postcode'):
-        if _tracking_timeout(state_data.get('shopify_verification_timestamp', '')):
-            _clear_shopify_verification_state()
-            # Fall through to normal processing
-        else:
-            user_lang = state_data.get('language', 'nl')
-            postcode_match = POSTCODE_RE.search(user_message.strip())
-            if postcode_match:
-                _clear_shopify_verification_state()
-                state_data['awaiting_order_number'] = True
-                state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
-                save_session_state(session_id, state_data)
-                if user_lang == 'en':
-                    response_text = (
-                        "Thank you! To retrieve the exact delivery time from our carrier, "
-                        "I need your **shipment tracking number** (e.g. **400000001**). "
-                        "You should have received this separately by email. "
-                        "What is your **shipment number**?"
-                    )
-                else:
-                    response_text = (
-                        "Bedankt! Om de exacte levertijd bij de vervoerder op te halen, "
-                        "heb ik je **zendingnummer** nodig (bijv. **400000001**). "
-                        "Dit heb je apart per e-mail ontvangen. "
-                        "Wat is je **zendingnummer**?"
-                    )
+        if result["success"]:
+            response_text = format_shipping_response(result, order_id)
+        elif result["status"] == "not_found":
+            # Two misses in a row means the number the customer has does not
+            # work here — stop asking and put a human on it.
+            if prior_attempts:
+                state_data['flow_attempts'] = prior_attempts
+            escalation = _flow_dead_end(user_lang)
+            if escalation:
+                response_text = (
+                    f"❌ Zendingnummer **#{order_id}** is niet gevonden. {escalation}"
+                    if user_lang == 'nl' else
+                    f"❌ Shipment **#{order_id}** was not found. {escalation}"
+                )
+            elif user_lang == 'en':
+                response_text = (
+                    f"❌ Shipment **#{order_id}** was not found. "
+                    "Please check the shipment number and try again."
+                )
+                _reset_to_awaiting_order_number()
             else:
-                response_text = _flow_dead_end(user_lang)
-                if response_text is None:
-                    if user_lang == 'en':
-                        response_text = (
-                            "That doesn't look like a valid postcode. "
-                            "Please enter a Dutch (e.g. **1234 AB**) or Belgian (e.g. **1000**) postcode."
-                        )
-                    else:
-                        response_text = (
-                            "Dat lijkt geen geldige postcode. "
-                            "Vul een Nederlandse (bijv. **1234 AB**) of Belgische (bijv. **1000**) postcode in."
-                        )
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
+                response_text = (
+                    f"❌ Zendingnummer **#{order_id}** is niet gevonden. "
+                    "Controleer het zendingnummer en probeer het opnieuw."
+                )
+                _reset_to_awaiting_order_number()
+        elif result["status"] == "no_status":
+            if user_lang == 'en':
+                response_text = (
+                    f"📦 Your shipment **#{order_id}** is registered but "
+                    "no status updates are available yet."
+                )
+            else:
+                response_text = (
+                    f"📦 Je zending **#{order_id}** is aangemeld maar "
+                    "er zijn nog geen statusupdates beschikbaar."
+                )
+        else:  # API error
+            if user_lang == 'en':
+                response_text = (
+                    "I'm unable to retrieve your shipment status right now. "
+                    "Please try again later or contact our customer service."
+                )
+            else:
+                response_text = (
+                    "Het is momenteel niet mogelijk om je zendingstatus op te halen. "
+                    "Probeer het later opnieuw of neem contact op met onze klantenservice."
+                )
+        return response_text
 
     # Step 1 of 2: we asked for the shipment number, waiting for user to provide it
     if state_data.get('awaiting_order_number'):
@@ -1792,57 +1732,7 @@ def _handle_chat(request_id: str) -> Response:
                 _clear_tracking_state()  # clean up before API call
 
                 if is_statusweb:
-                    client = get_shipping_client()
-                    result = client.get_shipment_status(order_id)
-
-                    if result["success"]:
-                        response_text = format_shipping_response(result, order_id)
-                    elif result["status"] == "not_found":
-                        # Two misses in a row means the number the customer has does not
-                        # work here — stop asking and put a human on it.
-                        if prior_attempts:
-                            state_data['flow_attempts'] = prior_attempts
-                        escalation = _flow_dead_end(user_lang)
-                        if escalation:
-                            response_text = (
-                                f"❌ Zendingnummer **#{order_id}** is niet gevonden. {escalation}"
-                                if user_lang == 'nl' else
-                                f"❌ Shipment **#{order_id}** was not found. {escalation}"
-                            )
-                        elif user_lang == 'en':
-                            response_text = (
-                                f"❌ Shipment **#{order_id}** was not found. "
-                                "Please check the shipment number and try again."
-                            )
-                            _reset_to_awaiting_order_number()
-                        else:
-                            response_text = (
-                                f"❌ Zendingnummer **#{order_id}** is niet gevonden. "
-                                "Controleer het zendingnummer en probeer het opnieuw."
-                            )
-                            _reset_to_awaiting_order_number()
-                    elif result["status"] == "no_status":
-                        if user_lang == 'en':
-                            response_text = (
-                                f"📦 Your shipment **#{order_id}** is registered but "
-                                "no status updates are available yet."
-                            )
-                        else:
-                            response_text = (
-                                f"📦 Je zending **#{order_id}** is aangemeld maar "
-                                "er zijn nog geen statusupdates beschikbaar."
-                            )
-                    else:  # API error
-                        if user_lang == 'en':
-                            response_text = (
-                                "I'm unable to retrieve your shipment status right now. "
-                                "Please try again later or contact our customer service."
-                            )
-                        else:
-                            response_text = (
-                                "Het is momenteel niet mogelijk om je zendingstatus op te halen. "
-                                "Probeer het later opnieuw of neem contact op met onze klantenservice."
-                            )
+                    response_text = _statusweb_reply(order_id, user_lang, prior_attempts)
                 else:
                     # Alphanumeric or short numeric → order/reference number, not a StatusWeb code
                     if user_lang == 'en':
@@ -1959,37 +1849,22 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, response_text)
         return jsonify({"response": response_text, "request_id": request_id})
 
-    # Detect order number mentioned directly in the message
-    # Supports: order, bestelling, bestellingnummer, zending, zendingnummer
-    # Even when the user already mentions their order number we still require
-    # the Exact 200 pre-verification step before revealing shipment information.
-    order_match = re.search(r'(?:order|bestelling(?:nummer)?|zending(?:nummer)?)\s*#?\s*(\d+)', user_message.lower())
-
-    if order_match and intent not in ('pre_purchase', 'return_payment'):
-        detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-        state_data['language'] = detected_lang
-        state_data['pending_shopify_order_number'] = order_match.group(1)
-        state_data['awaiting_shopify_postcode'] = True
-        state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
-        save_session_state(session_id, state_data)
-
-        if detected_lang == 'en':
-            response_text = (
-                "I can look that up! What is the **postcode** of the delivery address?"
-            )
-        else:
-            response_text = (
-                "Dat kan ik voor je opzoeken! Wat is de **postcode** van het afleveradres?"
-            )
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
-
-    # Detect tracking intent without an order number (e.g. "Waar is mijn pakket?").
-    # classify_intent has already ruled out pre-purchase questions, returns/refunds,
-    # order changes and human requests, so no extra guards are needed here.
+    # Tracking intent (e.g. "Waar is mijn pakket?"). classify_intent has already ruled
+    # out pre-purchase questions, returns/refunds, order changes and human requests,
+    # so no extra guards are needed here.
     if intent == 'tracking':
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         state_data['language'] = detected_lang
+
+        # The question already carries a StatusWeb number: look it up right away
+        # instead of asking for the number the customer just gave. Only 8+ digit
+        # codes — a short number in a first message is as likely a date or a volume.
+        order_id, is_statusweb = extract_order_identifier(user_message)
+        if is_statusweb:
+            response_text = _statusweb_reply(order_id, detected_lang)
+            _log_chat_message(session_id, request_id, user_message, response_text)
+            return jsonify({"response": response_text, "request_id": request_id})
+
         state_data['awaiting_order_number'] = True
         state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)

@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app import (
     PRE_PURCHASE_RE,
     TRACKING_INTENT_RE,
-    NO_ORDER_YET_RE,
     NO_SHIPMENT_NUMBER_RE,
     HUMAN_ESCALATION_RE,
     CLOSING_RE,
@@ -108,40 +107,6 @@ class TestTrackingIntentRE:
 
     def test_matches_binnen_krijgen(self):
         assert TRACKING_INTENT_RE.search("Wij zouden deze order vandaag binnen krijgen via een transporteur.")
-
-
-class TestNoOrderYetRE:
-    """NO_ORDER_YET_RE should detect 'I haven't ordered yet' statements."""
-
-    def test_matches_dutch_nog_geen_bestell(self):
-        assert NO_ORDER_YET_RE.search("ik heb nog geen bestelling")
-
-    def test_matches_dutch_nog_niet_besteld(self):
-        assert NO_ORDER_YET_RE.search("ik heb nog niet besteld")
-
-    def test_matches_dutch_geen_bestelling_gedaan(self):
-        assert NO_ORDER_YET_RE.search("ik heb geen bestelling gedaan")
-
-    def test_matches_english_havent_ordered(self):
-        assert NO_ORDER_YET_RE.search("I haven't ordered yet")
-
-    def test_matches_english_no_order_yet(self):
-        assert NO_ORDER_YET_RE.search("no order yet")
-
-    def test_does_not_match_no_order_number(self):
-        assert not NO_ORDER_YET_RE.search("ik heb mijn bestelnummer niet bij de hand")
-
-    def test_does_not_match_no_shipment_number(self):
-        assert not NO_ORDER_YET_RE.search("geen zendingnummer")
-
-    # --- named regression test ---
-    def test_no_order_yet_matches_common_dutch_phrase(self):
-        """Regression: 'ik heb nog geen bestelnummer' must trigger the
-        no-order-yet branch, not the order-lookup branch."""
-        assert NO_ORDER_YET_RE.search("ik heb nog geen bestelnummer"), (
-            "Phrase 'ik heb nog geen bestelnummer' must match NO_ORDER_YET_RE "
-            "so the bot responds with delivery-time info, not another order-number prompt."
-        )
 
 
 class TestNoShipmentNumberRE:

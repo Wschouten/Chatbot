@@ -90,17 +90,6 @@ class TestPrePurchaseBypassesWismo:
         )
         assert "order number" not in response
 
-    def test_session_does_not_enter_awaiting_shopify_order_number(self):
-        client = _make_client()
-        sid = _make_session_id()
-
-        _post(client, "als ik vandaag bestel, wanneer wordt het geleverd?", sid)
-
-        session = _load_session(sid)
-        assert not session.get("awaiting_shopify_order_number"), (
-            "Session must NOT have awaiting_shopify_order_number set after a pre-purchase question"
-        )
-
 
 # ---------------------------------------------------------------------------
 # Flow 2: Normal tracking question triggers WISMO
@@ -159,50 +148,6 @@ class TestTrackingQuestionTriggersWismo:
         session = _load_session(sid)
         assert session.get("awaiting_order_number") is True, (
             "Session must have awaiting_order_number=True after 'ik heb een zendingsnummer'"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Flow 3: WISMO → "no order yet" clears state and gives delivery info
-# ---------------------------------------------------------------------------
-
-class TestWismoNoOrderYetClearsState:
-    def test_response_contains_delivery_time_info(self):
-        import datetime
-        client = _make_client()
-        sid = _make_session_id()
-        _seed_session(sid, {
-            "state": "inactive",
-            "awaiting_shopify_order_number": True,
-            "shopify_verification_timestamp": datetime.datetime.now().isoformat(),
-        })
-
-        data = _post(client, "ik heb nog geen bestelling gedaan", sid)
-
-        response = data["response"].lower()
-        # Should give delivery time guidance, not ask for an order number again
-        assert "werkdagen" in response or "working days" in response or "klantenservice" in response, (
-            "Response after no-order-yet must contain delivery time info"
-        )
-        assert "bestelnummer" not in response, (
-            "Response must not ask for a bestelnummer when user hasn't ordered yet"
-        )
-
-    def test_session_awaiting_shopify_order_number_is_cleared(self):
-        import datetime
-        client = _make_client()
-        sid = _make_session_id()
-        _seed_session(sid, {
-            "state": "inactive",
-            "awaiting_shopify_order_number": True,
-            "shopify_verification_timestamp": datetime.datetime.now().isoformat(),
-        })
-
-        _post(client, "ik heb nog geen bestelling gedaan", sid)
-
-        session = _load_session(sid)
-        assert not session.get("awaiting_shopify_order_number"), (
-            "awaiting_shopify_order_number must be cleared after no-order-yet response"
         )
 
 

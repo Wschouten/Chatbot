@@ -200,3 +200,29 @@ def test_two_unknown_shipment_numbers_still_escalate():
 
     assert "naam" in data["response"].lower()
     assert flask_app.get_session_state(sid).get("state") == "awaiting_name"
+
+
+# ---------------------------------------------------------------------------
+# 1.8: the Shopify order-number → postcode flow is gone
+# ---------------------------------------------------------------------------
+
+def test_order_number_in_a_pickup_question_does_not_ask_for_a_postcode():
+    flask_app, client = _make_client()
+    data = _post(client, "Kan ik bestelling 12345 zelf afhalen?", _sid())
+    assert "postcode" not in data["response"].lower()
+
+
+def test_order_word_in_a_purchase_question_does_not_ask_for_a_postcode():
+    flask_app, client = _make_client()
+    data = _post(client, "Ik plaats een bestelling 5 m3 Frans boomschors, wat kost dat?", _sid())
+    assert "postcode" not in data["response"].lower()
+
+
+def test_tracking_question_with_shipment_number_is_looked_up_right_away():
+    flask_app, client = _make_client()
+    shipping = _shipping("found")
+    with patch.object(flask_app, "get_shipping_client", return_value=shipping):
+        data = _post(client, "Waar is mijn zending 4208360360?", _sid())
+
+    shipping.get_shipment_status.assert_called_once_with("4208360360")
+    assert "zendingnummer** door" not in data["response"]

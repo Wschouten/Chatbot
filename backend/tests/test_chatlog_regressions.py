@@ -158,24 +158,6 @@ class TestEscapeHatch:
         )
         assert _load_session(sid).get("state") == "awaiting_name"
 
-    def test_sess_rq86kt_verbind_me_door_breaks_out_of_postcode_step(self):
-        import datetime
-
-        client = _make_client()
-        sid = _make_session_id()
-        _seed_session(sid, {
-            "awaiting_shopify_postcode": True,
-            "pending_shopify_order_number": "18005131",
-            "shopify_verification_timestamp": datetime.datetime.now().isoformat(),
-            "language": "nl",
-            "chat_history": [],
-        })
-
-        data = _post(client, "Verbind me door", sid)
-
-        assert "postcode" not in data["response"].lower()
-        assert _load_session(sid).get("state") == "awaiting_name"
-
     def test_phone_request_breaks_out_of_tracking(self):
         client = _make_client()
         sid = _make_session_id()
