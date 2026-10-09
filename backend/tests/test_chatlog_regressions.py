@@ -379,3 +379,85 @@ class TestPhoneReplyNamesOpeningHours:
 
         assert "09:00" in data["response"] and "17:00" in data["response"]
         assert "verzendnummer" not in data["response"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Chatlog-analyse 2026-10-09 — conversations after the rebrand
+# ---------------------------------------------------------------------------
+
+class TestChatlog20261009:
+    def test_sess_sdlblr_restock_question_is_not_tracking(self):
+        import app as flask_app
+
+        msg = ("Hoi, ik heb interesse in jullie zakken onbewuste biologische tuinaarde, maar zie "
+               "dat dit niet op voorraad is. Wanneer komt het weer op voorraad?")
+        assert flask_app.classify_intent(msg) != "tracking"
+
+    def test_sess_sdlblr_not_ordered_yet_leaves_the_tracking_flow(self):
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, _tracking_state())
+
+        data = _post(client, "Ik heb nog geen bestelling geplaatst", sid)
+
+        assert "verzendbevestigingsmail" not in data["response"]
+        assert not _load_session(sid).get("awaiting_order_number")
+
+    def test_sess_xiw2_reorder_is_not_tracking(self):
+        import app as flask_app
+
+        assert flask_app.classify_intent(
+            "ik heb mijn bestelling gehad, maar wil hetzelfde bestellen") == "pre_purchase"
+
+    def test_sess_akzjz_no_email_asks_for_a_phone_number_and_escalates(self):
+        from unittest.mock import patch
+        import app as flask_app
+
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "awaiting_email", "language": "nl", "name": "Leonie",
+                            "question": "Kan ik een medewerker spreken", "chat_history": []})
+
+        first = _post(client, "Heb ik niet", sid)
+        assert "telefoonnummer" in first["response"]
+        assert _load_session(sid).get("state") == "awaiting_email", "the handoff was dropped"
+
+        with patch.object(flask_app, "ESCALATION_METHOD", "email"), \
+             patch.object(flask_app.escalation_client, "send_email",
+                          return_value={"ticket": {}}) as send:
+            done = _post(client, "0612345678", sid)
+
+        assert send.called, "no escalation email to customer service"
+        assert "0612345678" in send.call_args.args[2]
+        assert "telefonisch" in done["response"]
+
+    def test_sess_xiw2_reference_after_handoff_is_forwarded(self):
+        from unittest.mock import patch
+        import app as flask_app
+
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "inactive", "handoff_done": True, "language": "nl",
+                            "name": "Karim", "email": "karim@example.com", "chat_history": []})
+        with patch.object(flask_app, "ESCALATION_METHOD", "email"), \
+             patch.object(flask_app.escalation_client, "send_email",
+                          return_value={"ticket": {}}) as send:
+            data = _post(client, "PGBE-12442", sid)
+            assert send.called and "PGBE-12442" in send.call_args.args[2]
+            assert "doorgegeven" in data["response"]
+
+            send.reset_mock()
+            _post(client, "PGBE-12443", sid)  # only once
+            assert not send.called
+
+    def test_sess_akzjz_ai_question_is_answered_honestly(self):
+        client = _make_client()
+        sid = _make_session_id()
+        _seed_session(sid, {"state": "inactive", "handoff_done": True, "language": "nl",
+                            "chat_history": [{"role": "user", "content": "x"},
+                                             {"role": "assistant", "content": "y"}]})
+
+        data = _post(client, "Ja en spreek ik nu met ai of een medewerker?", sid)
+
+        assert "AI" in data["response"]
+        assert "collega" in data["response"]

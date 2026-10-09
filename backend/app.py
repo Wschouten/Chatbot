@@ -323,6 +323,9 @@ PRE_PURCHASE_RE = re.compile(
     r'|indien ik bestel'
     r'|voordat ik bestel|voor(dat)? ik ga bestellen'
     r'|wil (gaan )?bestellen|ga bestellen|wil ik bestellen'
+    # Re-ordering is buying, not tracking: "ik heb mijn bestelling gehad, maar wil
+    # hetzelfde bestellen" got the shipment-number prompt (sess_xiw2GqQW, 2026-10-06).
+    r'|(hetzelfde|dezelfde|nog\s+eens|nog\s+een\s+keer|opnieuw)\s+(\w+\s+){0,3}bestellen|nabestellen'
     r'|nog geen bestelling|nog niet besteld|nog geen order'
     r'|als ik (vandaag|nu|morgen|vanmiddag|vanochtend|vanavond|deze week)'
     r'|if i (place an? )?order'
@@ -661,6 +664,23 @@ PRODUCT_NAME_EXTRACT_RE = re.compile(
 )
 
 
+# "Praat ik met een AI?" — answered honestly and directly, never by the model (which
+# turned it into "Je bericht staat al bij een collega", sess_aKZjz0ks, 2026-10-05).
+AI_QUESTION_RE = re.compile(
+    r"\b(ben\s+(jij|je|u)\s+(nu\s+)?(een\s+)?(ai|bot|robot|chatbot|computer|mens|echte?\s+persoon)"
+    r"|(praat|spreek|chat)\s+ik\s+(nu\s+)?(met\s+)?(een\s+)?(ai|bot|robot|chatbot|computer)"
+    r"|(ai|bot|robot|computer)\s+of\s+(een\s+)?(mens|medewerker|persoon)"
+    r"|are\s+you\s+(a\s+)?(bot|ai|robot|human|real))\b",
+    re.IGNORECASE,
+)
+
+# Availability words that never belong to a shipment question.
+RESTOCK_RE = re.compile(
+    r'\b(op\s+voorraad|voorradig|vooradig|weer\s+leverbaar|uitverkocht)\b',
+    re.IGNORECASE,
+)
+
+
 def classify_intent(message: str) -> str:
     """Return one routing label for a fresh customer message.
 
@@ -694,6 +714,10 @@ def classify_intent(message: str) -> str:
         return 'return_payment'
     if PICKUP_RE.search(message):
         return 'rag'
+    if RESTOCK_RE.search(message):
+        # Above tracking: "… niet op voorraad. Wanneer komt het weer op voorraad?" hit
+        # "wanneer komt" and got the shipment-number prompt (sess_SDLBLRHc, 2026-10-04).
+        return 'stock'
     if TRACKING_INTENT_RE.search(message) or HAS_SHIPMENT_NUMBER_RE.search(message):
         return 'tracking'
     if STOCK_INTENT_RE.search(message):
@@ -910,6 +934,15 @@ def sanitize_session_id(session_id: str) -> str:
 
 
 EMAIL_IN_TEXT_RE = re.compile(r'[^\s@<>()"]+@[^\s@<>()"]+\.[A-Za-z]{2,}')
+# "Ik heb geen e-mail" / "heb ik niet" in answer to "Wat is je e-mailadres?".
+NO_EMAIL_RE = re.compile(
+    r'\b(heb\s+ik\s+niet|heb\s+(ik\s+)?geen|geen\s+e-?mail(adres)?|geen\s+mail'
+    r"|don'?t\s+have\s+(an?\s+)?(e-?mail|one)|no\s+e-?mail)\b",
+    re.IGNORECASE,
+)
+# An order, shipment or payment reference: letters optional, then 4+ digits
+# ("PGBE-12442", "BS6049", "400000001").
+REFERENCE_RE = re.compile(r'\b[A-Za-z]{0,5}[-\s]?\d{4,}\b')
 
 
 def is_valid_email(email: str) -> bool:
@@ -1454,21 +1487,21 @@ def _handle_chat(request_id: str) -> Response:
         _log_chat_message(session_id, request_id, user_message, resp, lang)
         return jsonify({"response": resp, "request_id": request_id})
 
-    def _forward_phone_number(lang: str) -> None:
-        """Send a follow-up escalation carrying a phone number the customer gave
-        after the handoff was already completed (sess_LHvfGM: the number went
-        nowhere). Guarded by `phone_forwarded` so it happens at most once."""
+    def _forward_addendum(what: str, flag: str) -> None:
+        """Send a follow-up escalation with something the customer added after the
+        handoff was completed — a phone number (sess_LHvfGM) or an order/payment
+        reference (sess_xiw2GqQW). Both used to go nowhere. `flag` keeps it to once."""
         name = state_data.get('name', 'Unknown')
         email = state_data.get('email', '')
-        note = f"Klant stuurde na de doorzetting een telefoonnummer na: {user_message}"
+        note = f"Klant stuurde na de doorzetting een {what} na: {user_message}"
         try:
             if ESCALATION_METHOD == "zendesk":
                 escalation_client.create_ticket(name, email, note, chat_history)
             else:
                 escalation_client.send_email(name, email, note, chat_history)
         except Exception as exc:
-            logger.error("Forwarding phone number failed: %s", exc)
-        state_data['phone_forwarded'] = True
+            logger.error("Forwarding %s failed: %s", what, exc)
+        state_data[flag] = True
         save_session_state(session_id, state_data)
 
     def _flow_dead_end(lang: str, attempts_key: str = 'flow_attempts') -> str | None:
@@ -1576,6 +1609,16 @@ def _handle_chat(request_id: str) -> Response:
         phone_reply = _handoff_phone_reply()
         if phone_reply:
             return phone_reply
+
+        # "Heb ik niet" was read as declining and wiped the handoff — three times in
+        # sess_aKZjz0ks (2026-10-05), from a customer who kept asking for a colleague.
+        # A callback works too (Wilco, 2026-10-09): ask for a number instead.
+        if NO_EMAIL_RE.search(user_message) and not EMAIL_IN_TEXT_RE.search(user_message):
+            return _reply(
+                "Geen probleem! Wat is je telefoonnummer? Dan belt een collega je terug."
+                if user_lang == 'nl' else
+                "No problem! What's your phone number? A colleague will call you back."
+            )
 
         # "mijn mail is jan@example.nl" failed the anchored EMAIL_REGEX and was asked
         # for again forever (audit 2026-10-09): take the address out of the sentence.
@@ -1804,6 +1847,10 @@ def _handle_chat(request_id: str) -> Response:
             '?' in user_message
             and not extract_order_identifier(user_message)[0]
             and not NO_SHIPMENT_NUMBER_RE.search(user_message)
+        ) or (
+            # "Ik heb nog geen bestelling geplaatst" was told its shipment number is in a
+            # confirmation email that was never sent (sess_SDLBLRHc, 2026-10-04).
+            PRE_PURCHASE_RE.search(user_message) is not None
         )
         if other_question or _expired(state_data.get('tracking_timestamp', '')):
             _clear_tracking_state()
@@ -1891,13 +1938,47 @@ def _handle_chat(request_id: str) -> Response:
         and PHONE_NUMBER_RE.search(user_message)
     ):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-        _forward_phone_number(detected_lang)
+        _forward_addendum("telefoonnummer", 'phone_forwarded')
         response_text = (
             "Ik heb je telefoonnummer doorgegeven aan de collega die je bericht oppakt. 👍"
             if detected_lang == 'nl' else
             "I've passed your phone number on to the colleague handling your message. 👍"
         )
         return _reply(response_text)
+
+    # The same for an order or payment reference sent after the handoff: the bot
+    # cannot look it up, but the colleague can — and it used to answer "dan kijk ik
+    # met je mee", which it cannot do either (sess_xiw2GqQW, 2026-10-06).
+    if (
+        state_data.get('handoff_done')
+        and not state_data.get('reference_forwarded')
+        and REFERENCE_RE.search(user_message)
+        and not PHONE_NUMBER_RE.search(user_message)  # phone numbers: the block above
+    ):
+        detected_lang = state_data.get('language') or 'nl'
+        _forward_addendum("referentie", 'reference_forwarded')
+        response_text = (
+            "Dank je, ik heb die referentie doorgegeven aan de collega die je bericht oppakt. "
+            "Die kijkt ernaar en neemt contact met je op. 👍"
+            if detected_lang == 'nl' else
+            "Thanks, I've passed that reference on to the colleague handling your message. "
+            "They'll look into it and get in touch. 👍"
+        )
+        return _reply(response_text)
+
+    if AI_QUESTION_RE.search(user_message):
+        lang = state_data.get('language') or 'nl'
+        if lang == 'nl':
+            resp = "Je praat met de digitale assistent van Boomschors.nl — een AI, geen medewerker."
+            resp += (" Je bericht staat al bij een collega; die neemt contact met je op."
+                     if state_data.get('handoff_done') else
+                     " Wil je liever een collega spreken? Zeg het maar, dan zet ik je door.")
+        else:
+            resp = "You're talking to the Boomschors.nl digital assistant — an AI, not a person."
+            resp += (" Your message is already with a colleague, who will get in touch."
+                     if state_data.get('handoff_done') else
+                     " Would you rather talk to a colleague? Just say so and I'll pass you on.")
+        return _reply(resp)
 
     if intent in ('human_request', 'order_admin', 'escalate_topic'):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
