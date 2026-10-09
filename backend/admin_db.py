@@ -509,27 +509,6 @@ def get_label_definitions() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def add_label_definition(name: str, color: str = "#94A3B8", description: str = "") -> bool:
-    """Create a new label definition. Returns True on success, False if duplicate."""
-    try:
-        with _transaction() as db:
-            db.execute(
-                "INSERT INTO label_definitions (name, color, description, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (name, color, description, _now()),
-            )
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
-
-def delete_label_definition(name: str) -> bool:
-    """Delete a label definition. Returns True if a row was deleted."""
-    with _transaction() as db:
-        cur = db.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
-        return cur.rowcount > 0
-
-
 def purge_orphaned_metadata(log_dir: str) -> int:
     """Delete portal rows (status, labels, notes, ratings) of conversations whose chat
     log has been removed by the retention job; they stayed forever, invisible in the

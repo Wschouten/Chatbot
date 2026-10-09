@@ -236,14 +236,6 @@ except Exception as e:
     PdfReader = None  # type: ignore
 
 
-def _count_tokens(text: str, model: str = "text-embedding-3-small") -> int:
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("cl100k_base")
-    return len(enc.encode(text))
-
-
 class RagEngine:
     """RAG Engine for document-based question answering."""
 
@@ -424,44 +416,6 @@ class RagEngine:
             + "\n".join(f"- Je zei: {stmt[:200]}" for stmt in recent)
             + "\nSpreek dit NIET tegen. Verwijs ernaar waar relevant.\n"
         )
-
-    def _extract_metadata_from_content(self, content: str, filename: str) -> dict[str, str]:
-        """Extract metadata from document content.
-
-        Feature 12: Knowledge Base Metadata
-
-        Checks first line for # PRODUCT: or # KENNIS: headers and extracts
-        category from ## Categorie section.
-
-        Args:
-            content: The full document content
-            filename: The source filename
-
-        Returns:
-            Dict with metadata fields: doc_type, product_name/topic, category
-        """
-        metadata: dict[str, str] = {}
-        lines = content.split('\n')
-
-        # Check first line for document type
-        if lines:
-            first_line = lines[0].strip()
-            if first_line.startswith('# PRODUCT:'):
-                metadata['doc_type'] = 'product'
-                metadata['product_name'] = first_line.replace('# PRODUCT:', '').strip()
-            elif first_line.startswith('# KENNIS:'):
-                metadata['doc_type'] = 'knowledge'
-                metadata['topic'] = first_line.replace('# KENNIS:', '').strip()
-
-        # Extract category from ## Categorie section
-        for i, line in enumerate(lines):
-            if line.strip() == '## Categorie':
-                # Category text is on the next line
-                if i + 1 < len(lines):
-                    metadata['category'] = lines[i + 1].strip()
-                break
-
-        return metadata
 
     def _ingest_text_chunks(
         self,
@@ -647,21 +601,17 @@ class RagEngine:
                     logger.error("Could not drop old chunks for %s: %s", file_id, exc)
                     return
 
-            file_metadata = self._extract_metadata_from_content(text, file_id)
-            file_metadata["content_hash"] = digest
-            self._ingest_text_chunks(text, file_id, file_metadata=file_metadata)
+            self._ingest_text_chunks(text, file_id, file_metadata={"content_hash": digest})
             counters["changed" if already_indexed else "new"] += 1
 
         # Process .txt files
         for file_path in glob.glob(os.path.join(self.knowledge_base_path, "*.txt")):
             file_id = os.path.basename(file_path)
             try:
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        text = f.read()
-                except UnicodeDecodeError:
-                    with open(file_path, "r", encoding="utf-8-sig") as f:
-                        text = f.read()
+                # utf-8-sig reads plain UTF-8 too; the old utf-8 → utf-8-sig retry on a
+                # decode error could never succeed.
+                with open(file_path, "r", encoding="utf-8-sig") as f:
+                    text = f.read()
                 _ingest_if_needed(file_id, text)
             except Exception as e:
                 logger.error("Error reading %s: %s", file_path, e)

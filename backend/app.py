@@ -322,7 +322,6 @@ EMAIL_REGEX = re.compile(
 MAX_MESSAGE_LENGTH = 1000
 VALID_STATUSES = {"open", "resolved", "escalated", "unknown_flagged"}
 LABEL_NAME_RE = re.compile(r'^[a-zA-Z0-9-]+$')
-HEX_COLOR_RE = re.compile(r'^#[0-9A-Fa-f]{6}$')
 # Hypothetical / not-yet-ordered questions. RAG answers these; the tracking and
 # stock flows must never ask such a customer for a shipment number.
 # The word gap was {0,5}, which failed on real sentences: "als ik deze ochtend frans
@@ -2634,63 +2633,6 @@ def get_label_definitions_route():
         return jsonify(labels), 200
     except Exception as e:
         logger.error("Failed to get label definitions: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/admin/api/labels", methods=["POST"])
-@limiter.limit("30 per minute")
-@require_admin_key
-def create_label_definition():
-    """Create a new label definition."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body required"}), 400
-
-    name = data.get("name", "").strip()
-    color = data.get("color", "#94A3B8").strip()
-    description = data.get("description", "").strip()
-
-    if (not name or len(name) > 50
-            or not LABEL_NAME_RE.match(name)):
-        return jsonify({
-            "error": "Invalid label name. "
-                     "Must be 1-50 alphanumeric characters or hyphens.",
-            "field": "name",
-        }), 400
-
-    if not HEX_COLOR_RE.match(color):
-        return jsonify({
-            "error": "Invalid color. "
-                     "Must be a hex color code (e.g., #FF0000).",
-            "field": "color",
-        }), 400
-
-    try:
-        success = admin_db.add_label_definition(
-            name, color, description
-        )
-        if success:
-            return jsonify({"success": True, "name": name}), 201
-        return jsonify({
-            "error": "Label definition already exists"
-        }), 409
-    except Exception as e:
-        logger.error("Failed to create label definition: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/admin/api/labels/<label_name>", methods=["DELETE"])
-@limiter.limit("30 per minute")
-@require_admin_key
-def delete_label_definition_route(label_name):
-    """Delete a label definition."""
-    try:
-        success = admin_db.delete_label_definition(label_name)
-        if success:
-            return jsonify({"success": True}), 200
-        return jsonify({"error": "Label definition not found"}), 404
-    except Exception as e:
-        logger.error("Failed to delete label definition: %s", e)
         return jsonify({"error": "Internal server error"}), 500
 
 
