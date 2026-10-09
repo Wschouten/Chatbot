@@ -60,8 +60,11 @@ Nee. Leveringen vinden uitsluitend plaats op werkdagen.
 
 ### Verzendkosten
 Nederland:
-- Standaard kleine pakketten: € 6,95
+- Onder € 50 orderbedrag: € 6,95
 - Vanaf een orderbedrag van € 50 is verzending gratis
+- Dit geldt voor alle bestellingen, ook voor bigbags: er is geen apart bigbag-tarief.
+  Een bigbag kost vrijwel altijd meer dan € 50, dus de bezorging van een bigbag is in
+  Nederland gratis (alleen een kooiaap of tijdslot kost extra).
 
 België:
 - Vast tarief van € 15 op alles, ongeacht het orderbedrag
