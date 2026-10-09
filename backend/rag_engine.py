@@ -1483,7 +1483,8 @@ class RagEngine:
                     "— deel GEEN algemene kennis over andere onderwerpen\n"
                     "3. Een vervolgvraag stelt of alternatieven biedt\n"
                     "4. NIET direct een collega of menselijke hulp aanbiedt - dat is laatste optie\n\n"
-                    "Houd het kort (2-3 zinnen max). Wees conversationeel, niet formeel."
+                    "Houd het kort (2-3 zinnen max). Wees conversationeel, niet formeel, "
+                    "en spreek de klant altijd aan met 'je' (tutoyeren)."
                 )
             else:
                 system_prompt = (
@@ -1510,9 +1511,15 @@ class RagEngine:
                 temperature=0.7,
                 max_completion_tokens=150
             )
-            result = response.choices[0].message.content
-            if result:
-                return result.strip()
+            result = (response.choices[0].message.content or "").strip()
+            # Same output gate as get_answer: this second generation used to reach the
+            # customer unchecked (audit 2026-10-09). No retry here — the safe answer
+            # is already the right reply to a question we have no information for.
+            problem = check_output(result, language) if result else "empty"
+            if problem:
+                logger.warning("Unknown-path output rejected (%s)", problem)
+                return _safe_fallback(language)
+            return result
         except Exception as e:
             logger.error("Error generating helpful unknown response: %s", e)
 

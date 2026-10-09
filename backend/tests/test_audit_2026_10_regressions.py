@@ -461,3 +461,44 @@ def test_statusweb_negation_is_not_reported_as_delivered():
         assert "🎉" not in reply, (desc, reply)
         assert desc in reply
     assert classify_status("Afgeleverd") == "delivered"
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — output gate on the unknown path, email inside a sentence
+# ---------------------------------------------------------------------------
+
+def test_unknown_path_output_goes_through_the_gate():
+    from rag_engine import RagEngine, _safe_fallback
+
+    engine = RagEngine.__new__(RagEngine)
+    engine.chat_model = "x"
+    engine.openai_client = MagicMock()
+    engine.openai_client.chat.completions.create.return_value.choices = [
+        MagicMock(message=MagicMock(content="这是一个测试回答"))]  # foreign script
+
+    assert engine.generate_helpful_unknown_response("vraag", "nl") == _safe_fallback("nl")
+
+
+def test_email_inside_a_sentence_is_accepted():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _handoff_state("awaiting_email", name="Jan"))
+    with patch.object(flask_app, "ESCALATION_METHOD", "email"), \
+         patch.object(flask_app.escalation_client, "send_email",
+                      return_value={"ticket": {}}) as send:
+        _post(client, "mijn mail is jan@example.nl.", sid)
+
+    assert send.called
+    assert send.call_args.args[1] == "jan@example.nl"
+
+
+def test_second_invalid_email_offers_the_phone():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _handoff_state("awaiting_email", name="Jan"))
+    with patch.object(flask_app.rag_engine, "detect_ticket_intent", return_value="giving_name"):
+        first = _post(client, "jan at example", sid)
+        second = _post(client, "jan op example", sid)
+
+    assert "telefoonnummer" not in first["response"]
+    assert "telefoonnummer" in second["response"]

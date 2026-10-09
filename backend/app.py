@@ -899,6 +899,9 @@ def sanitize_session_id(session_id: str) -> str:
     return re.sub(r'[^a-zA-Z0-9_\-]', '', session_id)[:100]
 
 
+EMAIL_IN_TEXT_RE = re.compile(r'[^\s@<>()"]+@[^\s@<>()"]+\.[A-Za-z]{2,}')
+
+
 def is_valid_email(email: str) -> bool:
     """Validate email address format using RFC 5322 simplified regex."""
     return bool(EMAIL_REGEX.match(email))
@@ -1557,7 +1560,10 @@ def _handle_chat(request_id: str) -> Response:
         if phone_reply:
             return phone_reply
 
-        email = user_message.strip()
+        # "mijn mail is jan@example.nl" failed the anchored EMAIL_REGEX and was asked
+        # for again forever (audit 2026-10-09): take the address out of the sentence.
+        found = EMAIL_IN_TEXT_RE.search(user_message)
+        email = found.group(0).rstrip('.,;:!?') if found else user_message.strip()
 
         # If it's not a valid email, check if user is declining
         if not is_valid_email(email):
@@ -1576,8 +1582,15 @@ def _handle_chat(request_id: str) -> Response:
                 # Fall through to RAG processing below
 
             else:
-                # Genuinely invalid email - ask again
+                # Genuinely invalid email - ask again; from the second miss on, offer
+                # the phone as a way out (a number given here goes with the handoff).
+                attempts = int(state_data.get('email_attempts', 0)) + 1
+                state_data['email_attempts'] = attempts
                 resp = "Hmm, dat lijkt niet helemaal te kloppen 🤔 Kun je je e-mailadres nog een keer checken?" if user_lang == 'nl' else "Hmm, that doesn't look quite right 🤔 Could you double-check your email address?"
+                if attempts >= 2:
+                    resp += (" Lukt het niet? Laat dan je telefoonnummer achter, dan bellen we jou."
+                             if user_lang == 'nl' else
+                             " Not working? Leave your phone number and we'll call you.")
                 return _reply(resp)
 
         else:
