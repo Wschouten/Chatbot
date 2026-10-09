@@ -536,3 +536,47 @@ def test_partial_embed_failure_removes_the_file_for_a_retry():
     text = ("regel\n" * 400)  # ~2400 chars → two chunks
     assert engine._ingest_text_chunks(text, "f.txt") == 0
     engine.collection.delete.assert_called_once_with(where={"source": "f.txt"})
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — privacy: portal.db orphans, served portal tree
+# ---------------------------------------------------------------------------
+
+def test_portal_metadata_of_deleted_logs_is_purged(tmp_path):
+    import sqlite3
+    import admin_db
+
+    db = tmp_path / "portal.db"
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "chat_sess_keep.json").write_text("[]")
+    with patch.dict(os.environ, {"PORTAL_DB_PATH": str(db)}):
+        from app import app as flask_app
+        with flask_app.app_context():
+            admin_db.init_db()
+            admin_db.upsert_metadata("sess_keep", status="open")
+            admin_db.upsert_metadata("sess_gone", status="open")
+            admin_db.add_note("sess_gone", "belde om 10 uur")
+            admin_db.close_db()
+        assert admin_db.purge_orphaned_metadata(str(logs)) == 1
+
+    conn = sqlite3.connect(db)
+    left = {r[0] for r in conn.execute("SELECT session_id FROM conversation_metadata")}
+    notes = conn.execute("SELECT COUNT(*) FROM conversation_notes").fetchone()[0]
+    conn.close()
+    assert left == {"sess_keep"} and notes == 0
+
+
+def test_empty_log_dir_never_wipes_the_portal(tmp_path):
+    import admin_db
+
+    (tmp_path / "logs").mkdir()
+    (tmp_path / "portal.db").write_bytes(b"")
+    with patch.dict(os.environ, {"PORTAL_DB_PATH": str(tmp_path / "portal.db")}):
+        assert admin_db.purge_orphaned_metadata(str(tmp_path / "logs")) == 0
+
+
+def test_only_portal_js_is_served():
+    _, client = _make_client()
+    assert client.get("/portal/js/storage.js").status_code == 200
+    assert client.get("/portal/trainingdata/x.json").status_code == 404

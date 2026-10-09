@@ -69,7 +69,7 @@ class ZendeskClient:
                 logger.info("  > Requester: %s (%s)", name, requester_email)
                 logger.info("  > Question: %s", question)
                 return {"ticket": {"id": "MOCK-123", "subject": "Mock Ticket"}}
-            logger.error("Zendesk credentials missing - ticket NOT created for: %s", name)
+            logger.error("Zendesk credentials missing - ticket NOT created")
             return None
 
         url = f"https://{self.subdomain}.zendesk.com/api/v2/tickets.json"

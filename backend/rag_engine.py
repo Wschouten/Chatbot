@@ -1264,7 +1264,7 @@ class RagEngine:
             # one, which is what customers actually received.
             problem = check_output(answer, language)
             if problem:
-                logger.warning("Output rejected (%s): %r", problem, answer[:120])
+                logger.warning("Output rejected (%s)", problem)
                 messages.append({"role": "assistant", "content": answer})
                 messages.append({
                     "role": "system", "content": _retry_instruction(problem, language),
@@ -1279,7 +1279,7 @@ class RagEngine:
                 still_broken = check_output(answer, language)
                 if still_broken:
                     logger.error(
-                        "Output still rejected after retry (%s): %r", still_broken, answer[:120]
+                        "Output still rejected after retry (%s)", still_broken
                     )
                     return _safe_fallback(language)
             return answer

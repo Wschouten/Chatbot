@@ -504,7 +504,10 @@ class StorageManager {
 
   _csvEscape(val) {
     if (val === null || val === undefined) return '';
-    const str = String(val);
+    let str = String(val);
+    // A customer message starting with = + - @ is a live formula once an admin
+    // opens the export in Excel (=HYPERLINK(...)); a leading quote keeps it text.
+    if (/^[=+\-@\t\r]/.test(str)) str = "'" + str;
     if (str.includes(',') || str.includes('"') || str.includes('\n')) {
       return '"' + str.replace(/"/g, '""') + '"';
     }

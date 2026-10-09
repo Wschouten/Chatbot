@@ -11,7 +11,7 @@ import os
 import sqlite3
 import threading
 import uuid
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 
 from flask import g
@@ -528,3 +528,34 @@ def delete_label_definition(name: str) -> bool:
     with _transaction() as db:
         cur = db.execute("DELETE FROM label_definitions WHERE name = ?", (name,))
         return cur.rowcount > 0
+
+
+def purge_orphaned_metadata(log_dir: str) -> int:
+    """Delete portal rows (status, labels, notes, ratings) of conversations whose chat
+    log has been removed by the retention job; they stayed forever, invisible in the
+    portal (audit 2026-10-09). Runs at startup outside a request, so it opens its own
+    connection. Returns the number of conversations purged.
+    """
+    db_path = _db_path()
+    if not os.path.exists(db_path) or not os.path.isdir(log_dir):
+        return 0
+    live = {f[len("chat_"):-len(".json")] for f in os.listdir(log_dir)
+            if f.startswith("chat_") and f.endswith(".json")}
+    if not live:
+        # No logs at all is more likely a missing volume than an empty shop: never
+        # wipe every label and note on that.
+        return 0
+    tables = ("conversation_labels", "conversation_notes", "message_metadata",
+              "conversation_metadata")  # children before the parent (foreign keys)
+    with _db_write_lock, closing(sqlite3.connect(db_path)) as conn:
+        known = {row[0] for table in tables
+                 for row in conn.execute(f"SELECT DISTINCT session_id FROM {table}")}
+        orphans = known - live
+        for session_id in orphans:
+            for table in tables:
+                conn.execute(f"DELETE FROM {table} WHERE session_id = ?", (session_id,))
+        conn.commit()
+    if orphans:
+        logger.info("Data retention: purged portal metadata of %d removed conversations",
+                    len(orphans))
+    return len(orphans)

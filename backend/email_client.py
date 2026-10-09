@@ -73,7 +73,7 @@ class EmailClient:
                 logger.info("  > Requester: %s (%s)", name, requester_email)
                 logger.info("  > Question: %s", question)
                 return {"ticket": {"id": "MOCK-EMAIL-123", "subject": subject}}
-            logger.error("MailerSend credentials missing - escalation email NOT sent for: %s", name)
+            logger.error("MailerSend credentials missing - escalation email NOT sent")
             return None
 
         # Build email body with full conversation history
@@ -123,7 +123,7 @@ class EmailClient:
                 MAILERSEND_API_URL, json=payload, headers=headers, timeout=HTTP_TIMEOUT
             )
             resp.raise_for_status()
-            logger.info("Escalation email sent successfully for: %s", name)
+            logger.info("Escalation email sent successfully")
             return {"ticket": {"id": "EMAIL-SENT", "subject": subject}}
         except http_requests.RequestException as e:
             logger.error("MailerSend API error: %s", e)

@@ -744,6 +744,8 @@ else:
 # Portal DB: Initialize SQLite and register teardown (Feature 30a)
 # =============================================================================
 admin_db.init_db(app)
+if not _TESTING:
+    admin_db.purge_orphaned_metadata("data/logs")  # GDPR: follows the log retention above
 
 @app.before_request
 def assign_request_id() -> None:
@@ -2146,11 +2148,12 @@ def admin_portal():
     return render_template('portal.html')
 
 
-@app.route('/portal/<path:filename>')
+@app.route('/portal/js/<path:filename>')
 def serve_portal_static(filename):
-    """Serve portal static files (JS, etc.) from the portal/ directory."""
+    """Serve the portal's JS. Only js/: the whole portal/ tree used to be public,
+    including any chat export dropped into portal/trainingdata/ (audit 2026-10-09)."""
     return send_from_directory(
-        os.path.join(os.path.dirname(__file__), '..', 'portal'),
+        os.path.join(os.path.dirname(__file__), '..', 'portal', 'js'),
         filename
     )
 
@@ -2180,8 +2183,9 @@ def admin_login():
 
     if not secrets.compare_digest(password, admin_key):
         logger.warning(
-            "Failed admin login attempt for user=%r from %s",
-            username, request.remote_addr,
+            # No username: an admin who types the key into the username field
+            # would otherwise have it written to the Railway logs.
+            "Failed admin login attempt from %s", request.remote_addr,
         )
         return jsonify({"error": "Unauthorized"}), 401
 
