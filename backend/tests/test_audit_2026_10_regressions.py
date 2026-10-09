@@ -380,3 +380,25 @@ def test_other_question_inside_tracking_flow_is_answered():
 
     assert data["response"] == "RAG answer"
     assert not flask_app.get_session_state(sid).get("awaiting_order_number")
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — every canned reply is recorded in chat_history
+# ---------------------------------------------------------------------------
+
+def test_every_canned_reply_is_recorded_in_history():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, {"state": "inactive", "language": "nl", "chat_history": []})
+    walk = [
+        "Waar is mijn pakket?",           # tracking prompt
+        "eh momentje",                    # flow re-prompt
+        "Wat is jullie telefoonnummer?",  # phone shortcut (leaves the flow)
+        "bedankt",                        # closing shortcut
+        "Ik wil een collega spreken",     # handoff opening
+    ]
+    for i, message in enumerate(walk, start=1):
+        _post(client, message, sid)
+        history = flask_app.get_session_state(sid).get("chat_history", [])
+        assert history[-2:][0]["content"] == message, f"turn not recorded: {message!r}"
+        assert len(history) == min(2 * i, 10)

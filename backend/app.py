@@ -1281,6 +1281,14 @@ def _handle_chat(request_id: str) -> Response:
         state_data['chat_history'] = chat_history[-10:]
         save_session_state(session_id, state_data)
 
+    def _reply(response: str) -> Response:
+        """Record the turn, log it and answer. Every early return goes through here:
+        a canned reply that skipped the history left the next message reformulated
+        without context and the escalation email without a transcript (audit 2026-10-09)."""
+        _remember_turn(response)
+        _log_chat_message(session_id, request_id, user_message, response)
+        return jsonify({"response": response, "request_id": request_id})
+
     def _start_handoff(
         lang: str,
         question: str,
@@ -1353,13 +1361,10 @@ def _handle_chat(request_id: str) -> Response:
         elif PHONE_CONTACT_RE.search(user_message):
             _clear_guided_flows()
             resp = _phone_response(flow_lang)
-            _remember_turn(resp)
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
         elif FRUSTRATION_RE.search(user_message):
             resp = _start_handoff(flow_lang, user_message)
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
 
     def _pause_handoff() -> None:
         """Handoff interrupted by another question: answer that question, but keep
@@ -1480,14 +1485,11 @@ def _handle_chat(request_id: str) -> Response:
             resp = ("Dank je, je telefoonnummer heb ik. 👍 En wat is je naam?"
                     if user_lang == 'nl' else
                     "Thanks, I've got your phone number. 👍 And what's your name?")
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
         if PHONE_CONTACT_RE.search(user_message):
             _pause_handoff()
             resp = _phone_response(user_lang)
-            _remember_turn(resp)
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
         return None
 
     if current_state == 'awaiting_name':
@@ -1504,9 +1506,7 @@ def _handle_chat(request_id: str) -> Response:
             state_data = {'state': 'inactive', 'chat_history': chat_history}
             resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
             # Recorded, so the loop detector sees the conversation moved on.
-            _remember_turn(resp)
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
 
         elif intent == 'new_question':
             # User is asking something else — answer it, but keep the name/email
@@ -1526,8 +1526,7 @@ def _handle_chat(request_id: str) -> Response:
                     if user_lang == 'nl' else
                     "Thanks, I've got your email address. 👍 And what's your name?"
                 )
-                _log_chat_message(session_id, request_id, user_message, resp)
-                return jsonify({"response": resp, "request_id": request_id})
+                return _reply(resp)
 
             # User provided their name - extract and continue
             clean_name = rag_engine.extract_name(user_message)
@@ -1542,8 +1541,7 @@ def _handle_chat(request_id: str) -> Response:
             save_session_state(session_id, state_data)
 
             resp = f"Leuk je te ontmoeten, {clean_name}! 👋 Wat is je e-mailadres?" if user_lang == 'nl' else f"Nice to meet you, {clean_name}! 👋 What's your email address?"
-            _log_chat_message(session_id, request_id, user_message, resp)
-            return jsonify({"response": resp, "request_id": request_id})
+            return _reply(resp)
 
     # ---------------------------------------------------------
     # STATE: AWAITING_EMAIL (with decline detection)
@@ -1564,9 +1562,7 @@ def _handle_chat(request_id: str) -> Response:
                 # User changed their mind - cancel ticket
                 state_data = {'state': 'inactive', 'chat_history': chat_history}
                 resp = "Geen probleem! 👍 Waarmee kan ik je verder helpen?" if user_lang == 'nl' else "No problem! 👍 How else can I help you?"
-                _remember_turn(resp)
-                _log_chat_message(session_id, request_id, user_message, resp)
-                return jsonify({"response": resp, "request_id": request_id})
+                return _reply(resp)
 
             elif intent == 'new_question':
                 # User asking something else — answer it, but keep what we have.
@@ -1576,8 +1572,7 @@ def _handle_chat(request_id: str) -> Response:
             else:
                 # Genuinely invalid email - ask again
                 resp = "Hmm, dat lijkt niet helemaal te kloppen 🤔 Kun je je e-mailadres nog een keer checken?" if user_lang == 'nl' else "Hmm, that doesn't look quite right 🤔 Could you double-check your email address?"
-                _log_chat_message(session_id, request_id, user_message, resp)
-                return jsonify({"response": resp, "request_id": request_id})
+                return _reply(resp)
 
         else:
             # Valid email - proceed with ticket creation
@@ -1846,8 +1841,7 @@ def _handle_chat(request_id: str) -> Response:
                                 "Vul je **zendingnummer** in (bijv. **400000001**). "
                                 "Als je die niet hebt, laat het me weten."
                             )
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
+            return _reply(response_text)
 
     # -------------------------------------------------------------------------
     # INTENT ROUTER (fase 4) — one decision with a fixed priority, taken before
@@ -1875,8 +1869,7 @@ def _handle_chat(request_id: str) -> Response:
             if detected_lang == 'nl' else
             "I've passed your phone number on to the colleague handling your message. 👍"
         )
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
+        return _reply(response_text)
 
     if intent in ('human_request', 'order_admin', 'escalate_topic'):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
@@ -1908,8 +1901,7 @@ def _handle_chat(request_id: str) -> Response:
         response_text = _start_handoff(
             detected_lang, user_message, opening=opening, reason=intent
         )
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
+        return _reply(response_text)
 
     # Tracking intent (e.g. "Waar is mijn pakket?"). classify_intent has already ruled
     # out pre-purchase questions, returns/refunds, order changes and human requests,
@@ -1924,8 +1916,7 @@ def _handle_chat(request_id: str) -> Response:
         order_id, is_statusweb = extract_order_identifier(user_message)
         if is_statusweb:
             response_text = _statusweb_reply(order_id, detected_lang)
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
+            return _reply(response_text)
 
         state_data['awaiting_order_number'] = True
         state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
@@ -1943,8 +1934,7 @@ def _handle_chat(request_id: str) -> Response:
                 "(bijv. **400000001**). "
                 "Je vindt dit in de verzendbevestigingsmail."
             )
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
+        return _reply(response_text)
 
     # STOCK LOOKUP step 2: user is providing the product name/SKU they were asked for
     if state_data.get('awaiting_product_name'):
@@ -1983,8 +1973,7 @@ def _handle_chat(request_id: str) -> Response:
                 save_session_state(session_id, state_data)
 
             response_text = format_stock_response(result, user_lang, product_query)
-            _log_chat_message(session_id, request_id, user_message, response_text)
-            return jsonify({"response": response_text, "request_id": request_id})
+            return _reply(response_text)
 
     # STOCK LOOKUP step 1: detect product availability intent inline.
     # Only enter the flow when Shopify is configured (or mocks are on) — otherwise
@@ -2019,8 +2008,7 @@ def _handle_chat(request_id: str) -> Response:
                 response_text = "Which product would you like to check? Please provide the name or SKU."
 
         save_session_state(session_id, state_data)
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        return jsonify({"response": response_text, "request_id": request_id})
+        return _reply(response_text)
 
     # Detect phone contact request — provide number and hours directly, don't start
     # email escalation. This returns before the RAG, so the reply has to be complete
@@ -2028,9 +2016,7 @@ def _handle_chat(request_id: str) -> Response:
     if PHONE_CONTACT_RE.search(user_message):
         detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
         resp = _phone_response(detected_lang)
-        _remember_turn(resp)
-        _log_chat_message(session_id, request_id, user_message, resp)
-        return jsonify({"response": resp, "request_id": request_id})
+        return _reply(resp)
 
     # Human escalation requests, order changes and the escalation catalogue are all
     # handled by the intent router above, before the tracking and stock flows.
@@ -2056,12 +2042,11 @@ def _handle_chat(request_id: str) -> Response:
                          "This deserves personal attention from one of our colleagues."),
                 reason='frustration' if (frustration_hit or prior_contact_hit) else 'loop',
             )
-            _log_chat_message(session_id, request_id, user_message, response_text)
             logger.info(
                 "[%s] Frustration escalation triggered (frustration=%s, prior_contact=%s, loop=%s)",
                 request_id, bool(frustration_hit), bool(prior_contact_hit), loop_hit,
             )
-            return jsonify({"response": response_text, "request_id": request_id})
+            return _reply(response_text)
 
     # Closing/farewell detection — skip RAG, reply with short canned response
     if CLOSING_RE.match(user_message.strip()):
@@ -2077,12 +2062,7 @@ def _handle_chat(request_id: str) -> Response:
                 if user_lang == 'nl' else
                 "You're welcome! Feel free to ask if you have more questions."
             )
-        _log_chat_message(session_id, request_id, user_message, response_text)
-        chat_history.append({"role": "user", "content": user_message})
-        chat_history.append({"role": "assistant", "content": response_text})
-        state_data['chat_history'] = chat_history[-10:]
-        save_session_state(session_id, state_data)
-        return jsonify({"response": response_text, "request_id": request_id})
+        return _reply(response_text)
 
     # Reset closing counter on a real message
     state_data.pop('consecutive_closings', None)
@@ -2111,17 +2091,8 @@ def _handle_chat(request_id: str) -> Response:
         # if the user explicitly asks for human contact
         save_session_state(session_id, state_data)
 
-    # Update conversation history for context in future messages
-    chat_history.append({"role": "user", "content": user_message})
-    chat_history.append({"role": "assistant", "content": response_text})
-    # Keep only last 10 messages to avoid token bloat
-    state_data['chat_history'] = chat_history[-10:]
-    save_session_state(session_id, state_data)
-
-    # Log and return
-    _log_chat_message(session_id, request_id, user_message, response_text)
     logger.info("[%s] Response sent successfully", request_id)
-    return jsonify({"response": response_text, "request_id": request_id})
+    return _reply(response_text)
 
 @app.route('/api/ingest', methods=['POST'])
 @require_admin_key
