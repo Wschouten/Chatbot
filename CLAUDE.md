@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 283 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 284 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -313,6 +313,7 @@ Plan and findings: [improvement-plan/CHATLOG-ANALYSE-2026-10-09.md](improvement-
 |---|---|
 | `5009483` | KB: bigbags fall under free shipping from € 50 (one session said they did not); tuinaarde settles 15–20 % |
 | `da912a4` | `RESTOCK_RE` above tracking; re-ordering is `pre_purchase`; "nog niet besteld" leaves the tracking flow; no email → ask for a phone number (customer service calls back, Wilco 2026-10-09); a reference sent after the handoff is forwarded once (`_forward_addendum`); honest answer to "praat ik met een AI?" |
+| `de1bbd7`, `218dcfd` | Shipping costs: `prijzen_topproducten.txt` no longer says "bij het afrekenen berekend"; `_shipping_block` injects the FAQ's `### Verzendkosten` section for any shipping-cost question (retrieval returned the product page instead). Keep that FAQ heading — a test fails without it |
 
 Still open: fase 3 of that plan — the RAG path asks the LLM for the language of *every*
 message (`app.py`, `detect_language` before `get_answer`), so "order PGBE-12" turned a
