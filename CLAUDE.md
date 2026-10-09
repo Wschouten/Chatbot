@@ -178,7 +178,8 @@ verify `/health`.
   **This only holds when the Railway service has no Custom Start Command.** On
   2026-10-09 it had `sh -c 'gunicorn -w 1 -b 0.0.0.0:${PORT:-5000} app:app'`, which
   overrides the Dockerfile `CMD`: one sync worker (one request at a time), a 30s
-  timeout, no access log, and the app running as root. Check with
+  timeout, no access log, and the app running as root. Cleared the same day and
+  verified (`gthread`, `appuser`, real visitor IPs in the access log). Check with
   `railway status --json` (`startCommand`) and keep the field empty.
 - Volume `chatbot-volume` is mounted at `/app/backend/data`, so logs, sessions,
   `portal.db` and `chroma_db` persist across deploys.
