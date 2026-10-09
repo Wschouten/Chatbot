@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 254 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 275 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -253,7 +253,7 @@ which only delivers to the account's own address. Any other recipient is accepte
 MailerSend, logged as "sent successfully", and never delivered — that is how the first
 test escalation to boomschors.nl vanished.
 
-### Code audit 2026-10-09 — Fase 1 done
+### Code audit 2026-10-09 — Fase 1 and 2 done
 
 A read-only, adversarially verified audit of the whole repo:
 [AUDIT-2026-10-09.md](AUDIT-2026-10-09.md) (41 findings, phased plan). Fase 1 is
@@ -269,10 +269,23 @@ implemented; each fix has a test in `tests/test_audit_2026_10_regressions.py`.
 | `901e34b` | 1.6 — a phone number given during the handoff goes with the escalation; asking ours only pauses it |
 | `23076eb` | 1.7 — loop detector needs the *last two* answers to be dead ends; declines are recorded |
 
+Fase 2:
+
+| Commit | What |
+|---|---|
+| `d871f04` | Router — `wanneer kunnen/wordt` needs an order noun, manco anchored to a delivery verb, dates/quantities are never order numbers, flows escape via the router. Verified over all 1,016 export messages |
+| `229081c` | Every early return goes through `_reply()` (records the turn, logs, answers) |
+| `2863dac` | "Oké" after a bot question is a yes; `volume_calc` refuses unit-less counts; StatusWeb negations → neutral reply (`classify_status`) |
+| `ad35a70` | `check_output` on the `__UNKNOWN__` path; email taken out of a sentence |
+| `666d84b` | Partial embed failure drops the file so the next boot retries; no duplicate tail chunk; per-write temp file |
+| `880bb2c` | No names in stdout logs; portal.db orphans purged at startup; only `/portal/js/` served; CSV formula escaping |
+| `c294f8d` | Portal language wired up (`lang` in each log entry, `_conversation_from_log`); persona vars out of `.env.example` |
+
 Still open: **1.4** — rate limits are probably keyed on Railway's proxy IP (no
 `ProxyFix`), so all visitors may share one bucket; check the access log before fixing.
-Then Fase 2 (router narrowing, `_remember_turn` everywhere, `volume_calc` units) and
-Fase 3 (dead code, ~250 lines left).
+**PII in chat logs** — only email addresses are redacted (see Conventions); names and
+phone numbers stay, because colleagues read these logs in the portal. A policy decision,
+not a bug. Then Fase 3 (dead code, ~200 lines left).
 
 ### What this taught, and is still true
 
@@ -321,8 +334,10 @@ Fase 3 (dead code, ~250 lines left).
 - A test module that posts many chat messages must set `flask_app.limiter.enabled = False`,
   not just `RATELIMIT_ENABLED` — otherwise the 30/min cap on `/api/chat` leaks into later
   modules as 429s.
-- Session and log filenames are sanitised (`sanitize_session_id`) and logs are
-  PII-redacted (`_redact_pii_for_log`) before hitting disk. Keep both in any new path
-  that writes user data.
+- Session and log filenames are sanitised (`sanitize_session_id`), and email addresses
+  are redacted from chat logs (`_redact_pii_for_log`) before hitting disk. Names and
+  phone numbers are *not* redacted — colleagues read these logs in the portal. Keep
+  both in any new path that writes user data, and keep customer names out of the
+  stdout logs (Railway's logs fall outside `data_retention`).
 - `AUDIT-2026-07-11.md` documents a full-repo audit and the five-phase cleanup that
   followed; it is history, not a to-do list.
