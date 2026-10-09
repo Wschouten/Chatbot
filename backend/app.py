@@ -492,6 +492,7 @@ PHONE_CONTACT_RE = re.compile(
 # knowledge_base/openingstijden.txt holds the same hours for questions phrased
 # without a phone word; tests/test_knowledge_base.py asserts the two agree.
 SUPPORT_PHONE = "0516 – 715 000"
+SUPPORT_EMAIL = "klantenservice@boomschors.nl"
 SUPPORT_HOURS_NL = "maandag t/m vrijdag van 09:00 tot 17:00"
 SUPPORT_HOURS_EN = "Monday to Friday from 09:00 to 17:00"
 FRUSTRATION_RE = re.compile(
@@ -1102,14 +1103,14 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             if lang == "nl":
                 msg = (
                     f"{'😔 ' if use_emojis else ''}Helaas is **{name}** momenteel niet op voorraad.\n"
-                    "Neem contact op via klantenservice@boomschors.nl voor meer informatie."
+                    f"Neem contact op via {SUPPORT_EMAIL} voor meer informatie."
                 )
                 if price_str:
                     msg += f"\n{'💰 ' if use_emojis else ''}Normale prijs: {price_str}"
             else:
                 msg = (
                     f"{'😔 ' if use_emojis else ''}Unfortunately **{name}** is currently out of stock.\n"
-                    "Please contact us at klantenservice@boomschors.nl for more information."
+                    f"Please contact us at {SUPPORT_EMAIL} for more information."
                 )
                 if price_str:
                     msg += f"\n{'💰 ' if use_emojis else ''}Regular price: {price_str}"
@@ -1145,24 +1146,24 @@ def format_stock_response(result: dict, lang: str, query: str = "") -> str:
             return (
                 f"{'🤔 ' if use_emojis else ''}Ik kan geen product vinden met de naam **{query}**.\n"
                 f"Kijk in onze webshop: {store_url}\n"
-                "Of neem contact op via klantenservice@boomschors.nl."
+                f"Of neem contact op via {SUPPORT_EMAIL}."
             )
         else:
             return (
                 f"{'🤔 ' if use_emojis else ''}I couldn't find a product called **{query}**.\n"
                 f"Browse our webshop: {store_url}\n"
-                "Or contact us at klantenservice@boomschors.nl."
+                f"Or contact us at {SUPPORT_EMAIL}."
             )
     else:  # error
         if lang == "nl":
             return (
                 f"{'😕 ' if use_emojis else ''}Het is momenteel niet mogelijk om de voorraad op te vragen.\n"
-                "Probeer het later opnieuw of neem contact op via klantenservice@boomschors.nl."
+                f"Probeer het later opnieuw of neem contact op via {SUPPORT_EMAIL}."
             )
         else:
             return (
                 f"{'😕 ' if use_emojis else ''}I'm unable to check stock availability right now.\n"
-                "Please try again later or contact us at klantenservice@boomschors.nl."
+                f"Please try again later or contact us at {SUPPORT_EMAIL}."
             )
 
 
@@ -1335,11 +1336,11 @@ def _handle_chat(request_id: str) -> Response:
             return (
                 "Je bericht staat al bij een collega — die neemt zo snel mogelijk "
                 "contact met je op via e-mail. Wil je er niet op wachten? "
-                "Bel ons dan via **0516 – 715 000**."
+                f"Bel ons dan via **{SUPPORT_PHONE}**."
                 if lang == 'nl' else
                 "Your message is already with a colleague — they'll get in touch by "
                 "email as soon as possible. Don't want to wait? "
-                "Call us at **0516 – 715 000**."
+                f"Call us at **{SUPPORT_PHONE}**."
             )
 
         _clear_guided_flows()
@@ -1617,8 +1618,8 @@ def _handle_chat(request_id: str) -> Response:
     # Shipping tracking state machine (two-step: shipment number → postcode)
     # -------------------------------------------------------------------------
 
-    def _tracking_timeout(ts_str: str) -> bool:
-        """Return True if the tracking state timestamp is older than 5 minutes."""
+    def _expired(ts_str: str) -> bool:
+        """True when a flow's timestamp is older than 5 minutes (or unreadable)."""
         try:
             ts = datetime.datetime.fromisoformat(ts_str)
             return datetime.datetime.now() - ts > datetime.timedelta(minutes=5)
@@ -1638,14 +1639,6 @@ def _handle_chat(request_id: str) -> Response:
         state_data['awaiting_order_number'] = True
         state_data['tracking_timestamp'] = datetime.datetime.now().isoformat()
         save_session_state(session_id, state_data)
-
-    def _stock_timeout(ts_str: str) -> bool:
-        """Return True if the stock lookup state has been waiting more than 5 minutes."""
-        try:
-            ts = datetime.datetime.fromisoformat(ts_str)
-            return (datetime.datetime.now() - ts) > datetime.timedelta(minutes=5)
-        except Exception:
-            return True
 
     def _clear_stock_state() -> None:
         for key in ('awaiting_product_name', 'product_name_timestamp',
@@ -1810,7 +1803,7 @@ def _handle_chat(request_id: str) -> Response:
             and not extract_order_identifier(user_message)[0]
             and not NO_SHIPMENT_NUMBER_RE.search(user_message)
         )
-        if other_question or _tracking_timeout(state_data.get('tracking_timestamp', '')):
+        if other_question or _expired(state_data.get('tracking_timestamp', '')):
             _clear_tracking_state()
             # Fall through to normal processing
         else:
@@ -1831,7 +1824,7 @@ def _handle_chat(request_id: str) -> Response:
                             "Unfortunately, I can't search directly by order number yet. "
                             "You'll find your Track & Trace link in the shipping confirmation email. "
                             "Didn't receive it? Feel free to contact us at "
-                            "klantenservice@boomschors.nl or **0516 – 715 000**."
+                            f"{SUPPORT_EMAIL} or **{SUPPORT_PHONE}**."
                         )
                     else:
                         response_text = (
@@ -1839,7 +1832,7 @@ def _handle_chat(request_id: str) -> Response:
                             "Helaas kan ik op dit moment nog niet rechtstreeks op bestelnummer zoeken. "
                             "Je vindt je Track & Trace-link in de verzendbevestigingsmail. "
                             "Heb je die niet ontvangen? Dan helpen we je graag via "
-                            "klantenservice@boomschors.nl of **0516 – 715 000**."
+                            f"{SUPPORT_EMAIL} of **{SUPPORT_PHONE}**."
                         )
             else:
                 # Check if user is expressing they don't have the shipment number
@@ -1971,7 +1964,7 @@ def _handle_chat(request_id: str) -> Response:
 
     # STOCK LOOKUP step 2: user is providing the product name/SKU they were asked for
     if state_data.get('awaiting_product_name'):
-        if _stock_timeout(state_data.get('product_name_timestamp', '')):
+        if _expired(state_data.get('product_name_timestamp', '')):
             _clear_stock_state()
             # Fall through to normal processing
         else:
