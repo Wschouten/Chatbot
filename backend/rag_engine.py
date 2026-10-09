@@ -478,6 +478,7 @@ class RagEngine:
         text_len = len(full_text)
         start = 0
         chunk_index = 0
+        failed = False
 
         while start < text_len:
             end = start + chunk_size
@@ -511,6 +512,12 @@ class RagEngine:
                     chunk_index += 1
                 except Exception as e:
                     logger.error("Error embedding chunk %d of %s: %s", chunk_index, source_id, e)
+                    failed = True
+
+            # The last chunk reached the end: stop. Subtracting the overlap first used to
+            # emit one more chunk that only repeated the tail (audit 2026-10-09).
+            if end >= text_len:
+                break
 
             # Move forward, subtracting overlap to keep context
             start = end - overlap
@@ -523,6 +530,14 @@ class RagEngine:
             if end <= start:
                 start = end
 
+        if failed:
+            # A partly embedded file still carries the full-file content_hash, so every
+            # later boot would skip it with chunks missing. Drop it all; the next boot
+            # sees no digest and retries the whole file (audit 2026-10-09).
+            logger.error("Ingest of %s incomplete; removing its chunks so the next boot retries",
+                         source_id)
+            self.collection.delete(where={"source": source_id})
+            return 0
         return chunk_index
 
     def _cleanup_stale_entries(self) -> int:

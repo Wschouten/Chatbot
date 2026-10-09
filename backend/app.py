@@ -968,7 +968,9 @@ def save_session_state(session_id: str, state: dict[str, Any]) -> None:
     """
     safe_id = sanitize_session_id(session_id)
     path = os.path.join(SESSION_DIR, f"{safe_id}.json")
-    tmp_path = f"{path}.tmp.{os.getpid()}"
+    # Unique per write, not per process: two threads saving the same session (a
+    # duplicated tab) shared one temp file and could interleave or lose the rename.
+    tmp_path = f"{path}.tmp.{secrets.token_hex(6)}"
     with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(state, f)
     os.replace(tmp_path, path)

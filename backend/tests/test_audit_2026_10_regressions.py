@@ -502,3 +502,37 @@ def test_second_invalid_email_offers_the_phone():
 
     assert "telefoonnummer" not in first["response"]
     assert "telefoonnummer" in second["response"]
+
+
+# ---------------------------------------------------------------------------
+# Fase 2 — ingestion: no duplicate tail chunk, a partial embed is retried
+# ---------------------------------------------------------------------------
+
+def _engine_with_collection(embed=lambda text: [0.0]):
+    from rag_engine import RagEngine
+
+    engine = RagEngine.__new__(RagEngine)
+    engine.collection = MagicMock()
+    engine._get_embedding = MagicMock(side_effect=embed)
+    return engine
+
+
+def test_chunker_emits_no_duplicate_tail_chunk():
+    engine = _engine_with_collection()
+    text = "x" * 1900  # one chunk; the last 200 chars used to come back as a second one
+    assert engine._ingest_text_chunks(text, "f.txt") == 1
+
+
+def test_partial_embed_failure_removes_the_file_for_a_retry():
+    calls = {"n": 0}
+
+    def flaky(text):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("429")
+        return [0.0]
+
+    engine = _engine_with_collection(flaky)
+    text = ("regel\n" * 400)  # ~2400 chars → two chunks
+    assert engine._ingest_text_chunks(text, "f.txt") == 0
+    engine.collection.delete.assert_called_once_with(where={"source": "f.txt"})
