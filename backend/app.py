@@ -1427,17 +1427,12 @@ def _handle_chat(request_id: str) -> Response:
         if attempts < 2:
             save_session_state(session_id, state_data)
             return None
-        _clear_guided_flows()
-        state_data['state'] = 'awaiting_name'
-        state_data['question'] = user_message
-        state_data['language'] = lang
-        state_data['escalation_reason'] = 'flow_dead_end'
-        save_session_state(session_id, state_data)
-        return (
-            "Dit lukt me zo niet — laat ik een collega ernaar kijken. Wat is je naam?"
-            if lang == 'nl' else
-            "I'm not getting anywhere with this — let me have a colleague look into it. "
-            "What's your name?"
+        return _start_handoff(
+            lang, user_message,
+            opening=("Dit lukt me zo niet — laat ik een collega ernaar kijken."
+                     if lang == 'nl' else
+                     "I'm not getting anywhere with this — let me have a colleague look into it."),
+            reason='flow_dead_end',
         )
 
     # ---------------------------------------------------------
@@ -1558,7 +1553,8 @@ def _handle_chat(request_id: str) -> Response:
             return True
 
     def _clear_tracking_state() -> None:
-        for key in ('awaiting_order_number', 'pending_order_id', 'tracking_timestamp'):
+        for key in ('awaiting_order_number', 'pending_order_id', 'tracking_timestamp',
+                    'flow_attempts'):
             state_data.pop(key, None)
         save_session_state(session_id, state_data)
 
@@ -1574,7 +1570,7 @@ def _handle_chat(request_id: str) -> Response:
         """Clear all Shopify order verification state keys from the session."""
         for key in ('awaiting_shopify_order_number', 'awaiting_shopify_postcode',
                     'pending_shopify_order_number',
-                    'shopify_verification_timestamp'):
+                    'shopify_verification_timestamp', 'flow_attempts'):
             state_data.pop(key, None)
         save_session_state(session_id, state_data)
 
@@ -1695,6 +1691,7 @@ def _handle_chat(request_id: str) -> Response:
             if order_num_match:
                 order_number = order_num_match.group(1)
                 state_data.pop('awaiting_shopify_order_number', None)
+                state_data.pop('flow_attempts', None)  # a new step starts with a clean count
                 state_data['pending_shopify_order_number'] = order_number
                 state_data['awaiting_shopify_postcode'] = True
                 state_data['shopify_verification_timestamp'] = datetime.datetime.now().isoformat()
@@ -1790,6 +1787,8 @@ def _handle_chat(request_id: str) -> Response:
             user_lang = state_data.get('language', 'nl')
             order_id, is_statusweb = extract_order_identifier(user_message)
             if order_id:
+                # Kept across the clear so two not-found numbers in a row still escalate.
+                prior_attempts = state_data.get('flow_attempts')
                 _clear_tracking_state()  # clean up before API call
 
                 if is_statusweb:
@@ -1801,6 +1800,8 @@ def _handle_chat(request_id: str) -> Response:
                     elif result["status"] == "not_found":
                         # Two misses in a row means the number the customer has does not
                         # work here — stop asking and put a human on it.
+                        if prior_attempts:
+                            state_data['flow_attempts'] = prior_attempts
                         escalation = _flow_dead_end(user_lang)
                         if escalation:
                             response_text = (
@@ -2107,26 +2108,17 @@ def _handle_chat(request_id: str) -> Response:
 
         if frustration_hit or prior_contact_hit or loop_hit:
             detected_lang = state_data.get('language') or rag_engine.detect_language(user_message)
-            state_data['state'] = 'awaiting_name'
-            state_data['question'] = user_message
-            state_data['language'] = detected_lang
-            state_data['escalation_reason'] = (
-                'frustration' if (frustration_hit or prior_contact_hit) else 'loop'
+            # Through _start_handoff, so a completed handoff is not started a second
+            # time and a known name is not asked for again (audit C6).
+            response_text = _start_handoff(
+                detected_lang, user_message,
+                opening=("Dat klinkt echt frustrerend, en dat begrijp ik goed. "
+                         "Dit verdient persoonlijke aandacht van een collega."
+                         if detected_lang == 'nl' else
+                         "I can hear that this has been really frustrating, and I'm sorry. "
+                         "This deserves personal attention from one of our colleagues."),
+                reason='frustration' if (frustration_hit or prior_contact_hit) else 'loop',
             )
-            save_session_state(session_id, state_data)
-
-            if detected_lang == 'nl':
-                response_text = (
-                    "Dat klinkt echt frustrerend, en dat begrijp ik goed. "
-                    "Dit verdient persoonlijke aandacht van een collega. "
-                    "Mag ik je naam, zodat ik je direct kan doorverbinden?"
-                )
-            else:
-                response_text = (
-                    "I can hear that this has been really frustrating, and I'm sorry. "
-                    "This deserves personal attention from one of our colleagues. "
-                    "May I have your name so I can connect you right away?"
-                )
             _log_chat_message(session_id, request_id, user_message, response_text)
             logger.info(
                 "[%s] Frustration escalation triggered (frustration=%s, prior_contact=%s, loop=%s)",

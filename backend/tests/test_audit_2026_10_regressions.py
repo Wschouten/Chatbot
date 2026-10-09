@@ -120,3 +120,83 @@ def test_null_session_id_is_never_shared():
     assert len(seen) == 2
     assert seen[0] != seen[1], "two visitors without a session id shared one session"
     assert "unknown_session" not in seen
+
+
+# ---------------------------------------------------------------------------
+# C6: every path into the handoff goes through _start_handoff
+# ---------------------------------------------------------------------------
+
+def _tracking_state(**extra):
+    import datetime
+    state = {
+        "awaiting_order_number": True,
+        "tracking_timestamp": datetime.datetime.now().isoformat(),
+        "language": "nl",
+        "chat_history": [{"role": "user", "content": "Waar is mijn pakket?"},
+                         {"role": "assistant", "content": "Wat is je zendingnummer?"}],
+    }
+    state.update(extra)
+    return state
+
+
+def _shipping(status):
+    client = MagicMock()
+    client.get_shipment_status.return_value = (
+        {"success": True, "status": "delivered", "description": "Afgeleverd"}
+        if status == "found" else {"success": False, "status": status}
+    )
+    return client
+
+
+def test_frustration_after_completed_handoff_does_not_restart_it():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, {
+        "state": "inactive", "handoff_done": True, "language": "nl",
+        "name": "Jan", "email": "jan@example.nl",
+        "chat_history": [{"role": "user", "content": "Hoe lang duurt het?"},
+                         {"role": "assistant", "content": "Een paar dagen."}],
+    })
+    data = _post(client, "Ik ben erg teleurgesteld", sid)
+
+    assert "naam" not in data["response"].lower()
+    assert flask_app.get_session_state(sid).get("state") != "awaiting_name"
+
+
+def test_flow_dead_end_skips_the_name_when_known():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state(name="Jan"))
+    _post(client, "eh momentje", sid)
+    data = _post(client, "even zoeken", sid)
+
+    assert "e-mailadres" in data["response"]
+    assert flask_app.get_session_state(sid).get("state") == "awaiting_email"
+
+
+def test_flow_attempts_reset_after_a_successful_lookup():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state())
+    with patch.object(flask_app, "get_shipping_client", return_value=_shipping("found")):
+        _post(client, "eh momentje", sid)        # miss 1
+        _post(client, "400000001", sid)          # found — flow ends
+    state = flask_app.get_session_state(sid)
+    assert "flow_attempts" not in state
+
+    flask_app.save_session_state(sid, _tracking_state(**{k: v for k, v in state.items()
+                                                           if k != "awaiting_order_number"}))
+    data = _post(client, "even zoeken", sid)     # first miss of a new flow
+    assert flask_app.get_session_state(sid).get("state") != "awaiting_name", data["response"]
+
+
+def test_two_unknown_shipment_numbers_still_escalate():
+    flask_app, client = _make_client()
+    sid = _sid()
+    flask_app.save_session_state(sid, _tracking_state())
+    with patch.object(flask_app, "get_shipping_client", return_value=_shipping("not_found")):
+        _post(client, "400000001", sid)
+        data = _post(client, "400000002", sid)
+
+    assert "naam" in data["response"].lower()
+    assert flask_app.get_session_state(sid).get("state") == "awaiting_name"
