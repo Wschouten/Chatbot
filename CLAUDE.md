@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 286 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 289 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -48,6 +48,7 @@ detects it is not running in a container — prefer Docker for anything touching
 | [backend/shipping_api.py](backend/shipping_api.py) | Van Den Heuvel StatusWeb track & trace (SOAP via `zeep`). |
 | [backend/email_client.py](backend/email_client.py) / [backend/zendesk_client.py](backend/zendesk_client.py) | Human escalation — MailerSend by default, Zendesk as the alternative (`ESCALATION_METHOD`). |
 | [backend/volume_calc.py](backend/volume_calc.py) | `compute_volume` — deterministic m²/m³/litre arithmetic, injected into the prompt as a fact so the model never multiplies. Returns `None` unless the dimensions parse with confidence. |
+| [backend/shopify_catalog.py](backend/shopify_catalog.py) | Mirrors the public webshop feed (`boomschors.nl/products.json`, no token) into `knowledge_base/shop_<handle>.txt` — title, link, price + availability per variant, description. Runs before `ingest_documents()` at startup and daily in a daemon thread. Generated, gitignored. |
 | [backend/brand_config.py](backend/brand_config.py) | Persona, tone and copy, all from env vars. No branding belongs in code. |
 | [backend/data_retention.py](backend/data_retention.py) | GDPR cleanup of expired sessions and logs, on startup. |
 | [backend/knowledge_base/](backend/knowledge_base/) | 40 `.txt` source documents (products, FAQ, comparison guides, policy). PDFs are supported too. |
@@ -169,6 +170,11 @@ Every item below has broken production at least once.
   recipient is accepted, logged "sent successfully" and never delivered. Do not set
   `BRAND_PERSONALITY_*` on Railway either: it replaces the persona defaults in
   `brand_config.py` and drops the upsell/no-repeat rules.
+- **Webshop files carry no date or timestamp** (`render_product`). The content hash
+  would change on every daily refresh and re-embed all ~95 products. Since 2026-10-20 the
+  bot may quote a price, but only one that is literally in the context (a `shop_*.txt`),
+  never a total; a `(webshop)` heading loses to the hand-written KB on contradictions.
+  A failed or empty feed leaves the existing files alone.
 - **Never commit `portal.db`.** A baked-in snapshot resets every admin label, note and
   status on each deploy.
 - **Changing `OPENAI_EMBEDDING_MODEL`** requires wiping `chroma_db/` so everything is
