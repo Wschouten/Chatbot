@@ -29,6 +29,9 @@ docker-compose up --build
 # RAG evaluation — BILLS THE OPENAI KEY. Only run when retrieval behaviour changes,
 # and then run it before AND after so you have a comparison.
 cd backend && python evaluate_rag.py
+# Needs Python 3.11 (ChromaDB breaks on 3.14): run it in the image, one container per
+# version, each with its own empty data dir — `git archive <commit> backend` into a
+# scratch dir, mount it at /app/backend, `--env-file backend/.env`, ingest, then evaluate.
 
 # Production health
 curl https://chatbot-production-557f.up.railway.app/health
@@ -207,7 +210,8 @@ verify `/health`.
 Stock lookup is gated off until `SHOPIFY_STOREFRONT_TOKEN` and `SHOPIFY_STORE_DOMAIN`
 are set on Railway — `_stock_lookup_enabled()`, [app.py:47](backend/app.py). Without a
 token a stock question falls through to RAG instead of dead-ending; it reactivates
-itself once the token lands. The WISMO order-number → postcode flow was **removed** in
+itself once the token lands. Availability (yes/no per variant) no longer needs it: it comes
+from the public webshop feed via `shopify_catalog.py`. The WISMO order-number → postcode flow was **removed** in
 `305e303` (audit 2026-10-09): it collected both values, discarded them and asked for
 the shipment number anyway. Rebuild it from scratch against the real Shopify API when
 the token exists. Background:
@@ -216,7 +220,7 @@ the token exists. Background:
 ## Change history
 
 Every round of work since July — the 2026-07-29 chatlog plan, `sess_jLgTn7`, the
-rebrand, the 2026-10-09 code audit and chatlog analysis — is in
+rebrand, the 2026-10-09 code audit and chatlog analysis, the 2026-10-20 webshop catalogue — is in
 [docs/HISTORY.md](docs/HISTORY.md), with commits and what production verification
 found. Plans: [AUDIT-2026-10-09.md](AUDIT-2026-10-09.md),
 [improvement-plan/CHATLOG-ANALYSE-2026-10-09.md](improvement-plan/CHATLOG-ANALYSE-2026-10-09.md).
@@ -250,6 +254,9 @@ before assuming a regression, and look for state shared between test modules.
   has no effect when another KB file answers the same question substantively. Since
   fase 4 that judgement is deterministic instead: `ORDER_ADMIN_RE` / `ESCALATE_TOPIC_RE`.
 - **A KB contradiction is fixed in the source file, never in the prompt.**
+- **A paragraph inside a larger file is not retrieved by product name.** "Florentus
+  Topstart — uit het assortiment" in `niet_leverbare_producten.txt` never reached the
+  model; its own small file did. A discontinued product gets its own file.
 - **A prompt's examples outweigh its adjectives.** The persona said "vriendelijk,
   informeel", but the one sample sentence in the whole Dutch prompt read "Bedoelt *u*
   misschien de rozenkever?" — and the bot drifted to the formal form mid-conversation

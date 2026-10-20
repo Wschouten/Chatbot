@@ -125,3 +125,20 @@ Fase 3 (`d5fb260`): mid-conversation the session language holds unless `guess_la
 
 "PGBE-…" is not a reference from the webshop or the carrier (Wilco); unknown origin.
 
+
+## Webshop catalogue as knowledge source (2026-10-20, verified in production)
+
+The public feed `boomschors.nl/products.json` (no token) is mirrored into
+`knowledge_base/shop_<handle>.txt` at startup and daily (`shopify_catalog.py`). Decisions
+(Wilco): the bot may quote current prices; "nu niet leverbaar" → say so and offer an
+alternative, never stock counts; the hand-written KB wins on contradictions.
+
+| Commit | What |
+|---|---|
+| `93a43b9` | `shopify_catalog.py`, daily refresh thread, prompt rules (price only if literally in context, no totals, `(webshop)` loses to the KB), `prijzen_topproducten.txt` now allows prices |
+| `aa1fa85` | RAG evaluation before/after in Docker: 57 → **55**/67. Nine near-identical bark pages filled the top 5 (each its own source, so the 2-per-source cap did not help); "Is tuinaarde PFAS-vrij?" lost its FAQ answer. Two-pass retrieval (`_retrieve_context`: KB top 5 + up to 3 webshop chunks) → **57**/67. `test_set.json`: graszaad is sold now → replaced by grasmaaiers |
+| `2e2052b` | 24 KB links stripped of webshop search codes (`?_pos=…`); Florentus Topstart out of range (link redirected to the homepage); `niet_leverbare_producten.txt` claimed the sheep-wool roll 0,8 × 5 m does not exist while the shop sells it |
+| `b084c0d` | Florentus as a paragraph in `niet_leverbare_producten.txt` was not retrieved ("ik kan de voorraad niet zien") → its own file, now answered correctly |
+
+Production replay: price per variant, big bale not available → big bag, PFAS, bark types,
+sheep-wool roll, Florentus — all correct. Chroma 79 → 204 chunks.
