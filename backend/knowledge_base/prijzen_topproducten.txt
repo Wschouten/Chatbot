@@ -8,9 +8,11 @@ Actuele prijzen staan altijd in de webshop op https://www.boomschors.nl.
 Prijzen verschillen per variant, per verpakking (zak, bigbag, big bale) en per
 hoeveelheid, en veranderen door het jaar heen.
 
-Wij noemen daarom geen prijzen in de chat. Vraagt een klant naar een prijs, een
-totaalbedrag of een prijsopgave, dan verwijzen wij naar de webshop: daar staat de
-prijs per variant.
+Bij elk product uit de webshop staan de varianten met hun prijs en of ze leverbaar
+zijn. Die prijs mag je noemen, met de productlink erbij: de actuele prijs staat altijd
+op de productpagina. Staat de prijs van een variant er niet bij, dan verwijzen wij
+naar de webshop. Een totaalbedrag voor meerdere producten of een prijsopgave maken
+wij niet in de chat.
 
 De verzendkosten noemen wij wél, want die liggen vast: in Nederland € 6,95 onder
 € 50 orderbedrag en gratis vanaf € 50 (ook voor bigbags; een bigbag is vrijwel altijd

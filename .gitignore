@@ -48,6 +48,9 @@ portal/trainingdata/
 # ChromaDB (large, can be regenerated)
 chroma_db/
 
+# Generated from the webshop feed at startup (shopify_catalog.py)
+backend/knowledge_base/shop_*.txt
+
 # Docker
 .dockerignore
 

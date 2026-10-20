@@ -23,6 +23,7 @@ from zendesk_client import ZendeskClient
 from email_client import EmailClient
 from brand_config import get_brand_config
 from data_retention import run_data_retention_cleanup
+from shopify_catalog import refresh_catalog
 import requests
 import admin_db
 from pathlib import Path
@@ -748,7 +749,23 @@ _TESTING = os.getenv('TESTING', '').strip().lower() in ('1', 'true', 'yes')
 if _TESTING:
     logger.info("TESTING mode — skipping KB ingestion and data-retention cleanup at import.")
 else:
+    logger.info(refresh_catalog(rag_engine.knowledge_base_path))
     logger.info(rag_engine.ingest_documents())
+
+    # Prices and availability change without a deploy; re-mirror the webshop daily.
+    # Only changed products are re-embedded (content hash in ingest_documents).
+    def _daily_catalog_refresh():
+        import time
+        while True:
+            time.sleep(24 * 3600)
+            try:
+                logger.info(refresh_catalog(rag_engine.knowledge_base_path))
+                logger.info(rag_engine.ingest_documents())
+            except Exception:
+                logger.exception("Daily Shopify catalogue refresh failed")
+
+    import threading
+    threading.Thread(target=_daily_catalog_refresh, daemon=True, name="catalog-refresh").start()
 
     # =========================================================================
     # GDPR: Data Retention Cleanup (runs on startup)
