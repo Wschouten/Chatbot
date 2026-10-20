@@ -136,3 +136,23 @@ def test_douglas_premium_is_not_confused_with_the_discontinued_excellent():
         "niet_leverbare_producten.txt must say Douglas Premium is a different, "
         "still-available product next to the Excellent entry"
     )
+
+
+def test_product_links_carry_no_search_tracking():
+    # Links copied from the webshop search carried "?_pos=1&_psq=...&_ss=e&_v=1.0";
+    # the bot passed them on to customers verbatim.
+    for path in _kb_files():
+        with open(path, encoding="utf-8-sig") as f:
+            for line in f:
+                if line.startswith("## Link:"):
+                    assert "?_" not in line and "&_" not in line, f"{os.path.basename(path)}: {line}"
+
+
+def test_sheep_wool_roll_is_not_denied():
+    # niet_leverbare_producten.txt said the 0,8 m x 5 m roll "does not exist" while the
+    # webshop sells it and the product file listed it — the KB wins on contradictions,
+    # so the bot would have denied a product on sale (2026-10-20).
+    with open(os.path.join(KB_DIR, "niet_leverbare_producten.txt"), encoding="utf-8-sig") as f:
+        text = f.read()
+    assert "bestaat niet in ons assortiment" not in text
+    assert "0,8 m x 5 m" in text

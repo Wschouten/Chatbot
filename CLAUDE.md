@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 290 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 292 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
