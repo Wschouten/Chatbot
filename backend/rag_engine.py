@@ -525,6 +525,41 @@ class RagEngine:
             return 0
         return chunk_index
 
+    def _retrieve_context(self, query_emb) -> str:
+        """Feature 13: two passes, so the ~95 near-identical webshop pages (shop_*.txt)
+        cannot crowd out the hand-written KB. The KB keeps its own top 5, exactly as
+        before the webshop was added; up to 3 webshop chunks are appended after it.
+        In a single pass "Is tuinaarde PFAS-vrij?" lost its FAQ answer to tuinaarde
+        product pages (RAG evaluation, 2026-10-20)."""
+        shop = sorted(
+            os.path.basename(f)
+            for f in glob.glob(os.path.join(self.knowledge_base_path, "shop_*.txt"))
+        )
+        if not shop:
+            return "\n\n".join(self._diversified(query_emb, 10, 5))
+        docs = self._diversified(query_emb, 10, 5, {"source": {"$nin": shop}})
+        docs += self._diversified(query_emb, 6, 3, {"source": {"$in": shop}})
+        return "\n\n".join(docs)
+
+    def _diversified(self, query_emb, n_results: int, top_k: int, where: dict | None = None) -> list[str]:
+        """Feature 13A/B: nearest chunks within the distance threshold, at most 2 per
+        source, top_k kept."""
+        results = self.collection.query(query_embeddings=[query_emb], n_results=n_results, where=where)
+        docs: list[str] = []
+        per_source: dict[str, int] = {}
+        for doc, doc_id, distance in zip(
+            results["documents"][0], results["ids"][0], results["distances"][0]
+        ):
+            if distance > self.relevance_threshold:
+                continue
+            source = doc_id.rsplit("_chunk_", 1)[0]
+            if per_source.get(source, 0) < 2:
+                docs.append(doc)
+                per_source[source] = per_source.get(source, 0) + 1
+                if len(docs) >= top_k:
+                    break
+        return docs
+
     def _cleanup_stale_entries(self) -> int:
         """Remove ChromaDB entries for files no longer on disk.
 
@@ -772,64 +807,11 @@ class RagEngine:
                 else:
                     query_emb = self._get_embedding(search_query)
 
-                    # Feature 13: Fetch more results for diversity filtering
-                    results = self.collection.query(query_embeddings=[query_emb], n_results=10)
-
-                    logger.debug("RAG Search Results for '%s':", query)
-                    if results["documents"] and results["distances"]:
-                        # Feature 13A: Distance Threshold Filtering
-                        filtered_docs = []
-                        filtered_ids = []
-                        filtered_distances = []
-
-                        for i, (doc, doc_id, distance) in enumerate(zip(
-                            results["documents"][0],
-                            results["ids"][0],
-                            results["distances"][0]
-                        )):
-                            if distance <= self.relevance_threshold:
-                                filtered_docs.append(doc)
-                                filtered_ids.append(doc_id)
-                                filtered_distances.append(distance)
-                                logger.debug(
-                                    "  Result %d (ID: %s, Distance: %.3f): %s...",
-                                    i + 1, doc_id, distance, doc[:100]
-                                )
-                            else:
-                                logger.debug(
-                                    "  Filtered out %d (ID: %s, Distance: %.3f > threshold %.2f)",
-                                    i + 1, doc_id, distance, self.relevance_threshold
-                                )
-
-                        # Feature 13B: Source Diversity - Cap at max 2 chunks per source
-                        if filtered_docs:
-                            source_count: dict[str, int] = {}
-                            diversified_docs = []
-                            diversified_ids = []
-
-                            for doc, doc_id in zip(filtered_docs, filtered_ids):
-                                # Extract source from document ID (format: "source_chunk_X")
-                                parts = doc_id.split("_")
-                                source = "_".join(parts[:-2]) if len(parts) > 2 else doc_id
-
-                                if source_count.get(source, 0) < 2:
-                                    diversified_docs.append(doc)
-                                    diversified_ids.append(doc_id)
-                                    source_count[source] = source_count.get(source, 0) + 1
-
-                                # Take top 5 from diversified set
-                                if len(diversified_docs) >= 5:
-                                    break
-
-                            logger.debug("After diversity filtering: %d results", len(diversified_docs))
-                            context = "\n\n".join(diversified_docs)
-                            # Cache the context for future queries
-                            if context:
-                                self._cache_context(search_query, context)
-                        else:
-                            logger.debug("  All results filtered out by distance threshold.")
+                    context = self._retrieve_context(query_emb)
+                    if context:
+                        self._cache_context(search_query, context)
                     else:
-                        logger.debug("  No results found.")
+                        logger.debug("  No results within the distance threshold for '%s'.", query)
             except Exception as e:
                 logger.error("RAG Search failed: %s", e)
 

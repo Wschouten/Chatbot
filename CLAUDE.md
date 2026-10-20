@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 289 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 290 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -175,6 +175,10 @@ Every item below has broken production at least once.
   bot may quote a price, but only one that is literally in the context (a `shop_*.txt`),
   never a total; a `(webshop)` heading loses to the hand-written KB on contradictions.
   A failed or empty feed leaves the existing files alone.
+- **Retrieval is two passes** (`_retrieve_context`): the hand-written KB gets its own
+  top 5, then up to 3 webshop chunks. In one shared pass the nine near-identical bark
+  pages filled the top 5 and "Is tuinaarde PFAS-vrij?" lost its FAQ answer (RAG
+  evaluation 57 → 55 of 67; back to 57 with two passes). Do not merge them again.
 - **Never commit `portal.db`.** A baked-in snapshot resets every admin label, note and
   status on each deploy.
 - **Changing `OPENAI_EMBEDDING_MODEL`** requires wiping `chroma_db/` so everything is

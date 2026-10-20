@@ -12,6 +12,7 @@ import requests
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import shopify_catalog  # noqa: E402
+from rag_engine import RagEngine  # noqa: E402
 
 PRODUCT = {
     "title": "Franse Boomschors 20-45mm",
@@ -68,3 +69,38 @@ def test_failed_feed_keeps_existing_files(tmp_path, monkeypatch):
     shopify_catalog.refresh_catalog(str(tmp_path))
 
     assert (tmp_path / "shop_keep.txt").read_text(encoding="utf-8") == "blijft"
+
+
+class _RankedCollection:
+    """Chroma stand-in: chunks in a fixed nearest-first order; honours where $in/$nin."""
+
+    def __init__(self, sources):
+        self.ids = [f"{s}_chunk_0" for s in sources]
+
+    def query(self, query_embeddings, n_results, where=None):
+        ids = self.ids
+        if where:
+            cond = where["source"]
+            keep = (lambda s: s in cond["$in"]) if "$in" in cond else (lambda s: s not in cond["$nin"])
+            ids = [i for i in ids if keep(i.rsplit("_chunk_", 1)[0])]
+        ids = ids[:n_results]
+        return {"ids": [ids], "documents": [ids], "distances": [[0.5] * len(ids)]}
+
+
+def test_webshop_pages_cannot_crowd_out_the_hand_written_kb(tmp_path):
+    # RAG evaluation 2026-10-20: in a single pass, tuinaarde product pages filled the
+    # top results and the FAQ's PFAS answer never reached the model.
+    shop = [f"shop_tuinaarde-{n}.txt" for n in range(12)]
+    kb = ["Tuinaarde (Algemeen).txt", "FAQ GCG.txt"]
+    for name in shop + kb:
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    engine = object.__new__(RagEngine)
+    engine.knowledge_base_path = str(tmp_path)
+    engine.relevance_threshold = 1.2
+    engine.collection = _RankedCollection(shop + kb)  # every shop page ranks above the KB
+
+    context = engine._retrieve_context([0.0])
+
+    assert "FAQ GCG.txt_chunk_0" in context
+    assert context.startswith("Tuinaarde (Algemeen).txt_chunk_0")
+    assert sum(part.startswith("shop_") for part in context.split("\n\n")) == 3

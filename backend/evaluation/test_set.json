@@ -360,7 +360,7 @@
     "expect_unknown": true
   },
   {
-    "question": "Hebben jullie ook graszaad?",
+    "question": "Verkopen jullie ook grasmaaiers?",
     "expected_answer_keywords": [],
     "category": "hallucination_check",
     "expect_unknown": true
