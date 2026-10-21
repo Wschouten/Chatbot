@@ -142,3 +142,16 @@ alternative, never stock counts; the hand-written KB wins on contradictions.
 
 Production replay: price per variant, big bale not available → big bag, PFAS, bark types,
 sheep-wool roll, Florentus — all correct. Chroma 79 → 204 chunks.
+
+
+## boomschors.nl/hergebruik answered, not escalated (2026-10-21, NOT yet deployed)
+
+`boomschors.nl/hergebruik` printed on the bigbags is a printing error; reusing or
+returning bigbags is not possible (Wilco). `78709e0`: `HERGEBRUIK_RE` routes these to RAG
+ahead of the "staat op de bigbag" escalation, the FAQ explains it. Over all 1,444 unique
+customer messages in the exports the rule matches exactly the 4 reuse questions.
+
+Not live: Railway paused all builds at 07:24 UTC (incident), 8 minutes before the push;
+production still ran `3cae0f4` and escalated. Next: deploy `78709e0`, then replay
+"Er staat letterlijk op de zijkant van de bigbag dat ie hergebruikt kan worden via
+boomschors.nl/hergebruik" against production.
