@@ -619,16 +619,23 @@ ESCALATE_TOPIC_RE = re.compile(
     r'|fout\s+op\s+(de\s+)?(website|webshop|site)'
     r'|(nog\s+)?geen\s+(bevestiging|bevestigingsmail|orderbevestiging)'
     r'|foutmelding|error\s+(bij|tijdens)|kan\s+niet\s+afrekenen|lukt\s+niet\s+(om\s+)?te\s+bestellen'
-    # The packaging contradicts the bot — sess_TDOgT58, sess_epXnDes, sess_PL0j.
-    # boomschors.nl/hergebruik is printed on the bigbags but returns a 404, so any
-    # mention of it needs a human until the page exists.
+    # The packaging contradicts the bot — sess_TDOgT58, sess_PL0j.
     r'|(staat|stond)[^.?!]{0,30}op\s+(de\s+)?(zijkant\s+van\s+de\s+)?(big\s?bag|zak|verpakking|doos)'
     r'|op\s+de\s+(big\s?bag|zak|verpakking)[^.?!]{0,25}staat'
-    r'|boomschors\.nl/hergebruik|/hergebruik'
     # English equivalents
     r'|(short|missing|damaged|broken)\s+(delivery|items?|bags?)'
     r'|received\s+(only|just)\s+\d+|still\s+(not|haven.t)\s+(received|arrived)'
     r'|waiting\s+(for\s+)?\d+\s+(days|weeks)|quote\s+request|request\s+a\s+quote',
+    re.IGNORECASE,
+)
+
+# boomschors.nl/hergebruik is printed on the bigbags but is a printing error: the page
+# will never exist and bigbags cannot be reused or returned (Wilco, 2026-10-21). The
+# FAQ answers that, so this goes to RAG ahead of the "staat op de bigbag" escalation
+# above — sess_epXnDes used to be handed to a colleague who could not help either.
+HERGEBRUIK_RE = re.compile(
+    r'/hergebruik|hergebruik\w*[^.?!]{0,40}(big\s?bag|zak)'
+    r'|(big\s?bag|zak)[^.?!]{0,60}hergebruik',
     re.IGNORECASE,
 )
 
@@ -690,8 +697,8 @@ def classify_intent(message: str) -> str:
     TRACKING_INTENT_RE on "mijn bestelling" and got the shipment-number prompt
     instead of a colleague, and every order change went the same way.
 
-    Priority: human_request > order_admin > escalate_topic > pre_purchase >
-    return_payment > pickup (→ rag) > tracking > stock > rag.
+    Priority: human_request > order_admin > hergebruik (→ rag) > escalate_topic >
+    pre_purchase > return_payment > pickup (→ rag) > tracking > stock > rag.
 
     Two ordering decisions worth knowing:
     - `pre_purchase` sits *below* order_admin but *above* tracking. A customer who
@@ -705,6 +712,8 @@ def classify_intent(message: str) -> str:
         return 'human_request'
     if ORDER_ADMIN_RE.search(message) or BS_ORDER_REF_RE.search(message):
         return 'order_admin'
+    if HERGEBRUIK_RE.search(message):
+        return 'rag'
     if ESCALATE_TOPIC_RE.search(message):
         return 'escalate_topic'
     if PRE_PURCHASE_RE.search(message):

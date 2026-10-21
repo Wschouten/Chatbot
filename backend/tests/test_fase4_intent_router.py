@@ -61,8 +61,6 @@ ESCALATE_TOPIC_CASES = [
     ("sess_B9h3CC", "Betaling gelukt maar daarna een fout op de website en heb nog geen "
                     "email ontvangen van bevestiging"),
     ("sess_TDOgT58", "Dat staat wel op de zak"),
-    ("sess_epXnDes", "Er staat letterlijk op de zijkant van de bigbag dat ie hergebruikt "
-                     "kan worden via boomschors.nl/hergebruik"),
     ("sess_Lv59sQ", "Ik wil twee keer 36 zakken Bemeste Tuinaarde bestellen en laten "
                     "leveren in Noord-Frankrijk. Kan ik daarvoor een prijsopgave ontvangen?"),
     ("_damage", "De zakken kwamen kapot aan"),
@@ -151,6 +149,22 @@ def test_rebrand_replay_pickup_question_is_not_tracking(message):
     """Found replaying production after the rebrand (2026-10-01): "mijn bestelling"
     sent a pickup question to the shipment-number prompt."""
     assert classify_intent(message) == 'rag'
+
+
+@pytest.mark.parametrize("message", [
+    "Er staat letterlijk op de zijkant van de bigbag dat ie hergebruikt "
+    "kan worden via boomschors.nl/hergebruik",
+    "Hoe kan ik de bigbag hergebruiken?",
+    "Op de zak staat boomschors.nl/hergebruik maar die pagina werkt niet",
+])
+def test_sess_epxndes_hergebruik_is_answered_not_escalated(message):
+    """boomschors.nl/hergebruik is a printing error on the bigbags (Wilco, 2026-10-21):
+    the FAQ explains it, so it goes to RAG instead of a colleague who cannot help."""
+    assert classify_intent(message) == 'rag'
+
+
+def test_packaging_contradiction_without_hergebruik_still_escalates():
+    assert classify_intent("Dat staat wel op de zak") == 'escalate_topic'
 
 
 def test_tracking_still_routes_to_tracking():
