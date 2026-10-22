@@ -205,6 +205,11 @@ verify `/health`.
   `portal.db` and `chroma_db` persist across deploys.
 - `/health` reporting `"environment": "local"` on Railway is cosmetic — `/.dockerenv`
   is absent there. The app is genuinely on Railway.
+- `/health` reporting openai `healthy` only means a key is *set*, not that it works
+  (seen 2026-10-22 with a revoked key). Verify a key with a real `/api/chat` call and
+  the `api.openai.com ... 200 OK` line in the logs.
+- A changed Railway variable only reaches the app after a redeploy. Rotating a secret:
+  new value on Railway → redeploy → verify → only then revoke the old one.
 
 ## Features deliberately off
 

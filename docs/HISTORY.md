@@ -155,3 +155,22 @@ Not live: Railway paused all builds at 07:24 UTC (incident), 8 minutes before th
 production still ran `3cae0f4` and escalated. Next: deploy `78709e0`, then replay
 "Er staat letterlijk op de zijkant van de bigbag dat ie hergebruikt kan worden via
 boomschors.nl/hergebruik" against production.
+
+
+## Railway env-var leak — key rotation (2026-10-22, waiting on Hobby deploys)
+
+Railway reported that an attacker may have read decrypted environment variables. Secrets
+on the service: `OPENAI_API_KEY`, `ADMIN_API_KEY` (no `SESSION_SECRET`, so the portal
+cookie secret derives from it), `MAILERSEND_API_KEY`, `SHIPPING_API_KEY`,
+`SHIPPING_API_PASSWORD`. `FLASK_DEBUG=false` is set on Railway and parses as off.
+
+- Access log since the last boot (2026-10-20 14:55 UTC): the only successful
+  `/admin/api` calls were Wilco's own portal login (23.249.238.92, 21-10 07:26/07:36).
+  No sign that conversations were exported by someone else.
+- Old OpenAI key revoked 08:34 UTC (confirmed: `401 token_invalidated`). New values for
+  all five secrets are in `backend/.env`; not yet on Railway — variable changes need a
+  redeploy and Hobby could not deploy all morning. Old MailerSend and Van Den Heuvel
+  credentials stay valid until the redeploy is verified.
+- Found on the way: with an invalid OpenAI key the bot answers "Hmm, daar heb ik helaas
+  geen specifieke informatie over" (looks like a KB gap, no contact details) and
+  `/health` still reports openai `healthy` — it only checks that a key is set.
