@@ -284,6 +284,9 @@ class RagEngine:
         self.chroma_client: Any = None
 
         # Feature 10: Make LLM Model Configurable
+        # Every chat call turns reasoning off (reasoning_effort): reasoning models
+        # (gpt-5.6-luna) otherwise reject any temperature but 1 and spend the
+        # 5-10 token classifier budgets on reasoning, returning an empty answer.
         self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
         self.embedding_model = os.getenv('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-small')
 
@@ -362,6 +365,7 @@ class RagEngine:
 
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=[
                     {
                         "role": "system",
@@ -782,6 +786,7 @@ class RagEngine:
                     try:
                         translation = self.openai_client.chat.completions.create(
                             model=self.chat_model,
+                            reasoning_effort="none",
                             messages=[{
                                 "role": "system",
                                 "content": "Translate the following English text to Dutch. Return ONLY the translation, nothing else."
@@ -1240,6 +1245,7 @@ class RagEngine:
 
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=messages,
                 temperature=0.7,
                 max_completion_tokens=350
@@ -1258,6 +1264,7 @@ class RagEngine:
                 })
                 retry = self.openai_client.chat.completions.create(
                     model=self.chat_model,
+                    reasoning_effort="none",
                     messages=messages,
                     temperature=0.3,
                     max_completion_tokens=350,
@@ -1286,6 +1293,7 @@ class RagEngine:
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=[
                     {
                         "role": "system",
@@ -1348,6 +1356,7 @@ class RagEngine:
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=[
                     {
                         "role": "system",
@@ -1412,6 +1421,7 @@ class RagEngine:
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=[
                     {
                         "role": "system",
@@ -1509,6 +1519,7 @@ class RagEngine:
 
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=messages,
                 temperature=0.7,
                 max_completion_tokens=150

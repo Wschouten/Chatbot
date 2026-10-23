@@ -29,7 +29,8 @@ class RAGEvaluator:
         self.test_set_path = test_set_path
         self.rag_engine = RagEngine()
         self.openai_client = OpenAI()
-        self.chat_model = os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
+        # The judge. Pin EVAL_JUDGE_MODEL when comparing chat models, or each model grades itself.
+        self.chat_model = os.getenv('EVAL_JUDGE_MODEL') or os.getenv('OPENAI_CHAT_MODEL', 'gpt-5.4-mini')
         self.results: list[dict[str, Any]] = []
 
     def load_test_set(self) -> list[dict[str, Any]]:
@@ -105,6 +106,7 @@ Output only valid JSON, nothing else."""
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.chat_model,
+                reasoning_effort="none",
                 messages=[
                     {"role": "system", "content": "You are an expert evaluator. Output only valid JSON."},
                     {"role": "user", "content": prompt}
