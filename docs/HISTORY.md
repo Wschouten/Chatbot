@@ -144,7 +144,7 @@ Production replay: price per variant, big bale not available → big bag, PFAS, 
 sheep-wool roll, Florentus — all correct. Chroma 79 → 204 chunks.
 
 
-## boomschors.nl/hergebruik answered, not escalated (2026-10-21, NOT yet deployed)
+## boomschors.nl/hergebruik answered, not escalated (2026-10-21, live 2026-10-23)
 
 `boomschors.nl/hergebruik` printed on the bigbags is a printing error; reusing or
 returning bigbags is not possible (Wilco). `78709e0`: `HERGEBRUIK_RE` routes these to RAG
@@ -157,7 +157,7 @@ production still ran `3cae0f4` and escalated. Next: deploy `78709e0`, then repla
 boomschors.nl/hergebruik" against production.
 
 
-## Railway env-var leak — key rotation (2026-10-22, waiting on Hobby deploys)
+## Railway env-var leak — key rotation (2026-10-22, done and verified 2026-10-23)
 
 Railway reported that an attacker may have read decrypted environment variables. Secrets
 on the service: `OPENAI_API_KEY`, `ADMIN_API_KEY` (no `SESSION_SECRET`, so the portal
@@ -174,3 +174,30 @@ cookie secret derives from it), `MAILERSEND_API_KEY`, `SHIPPING_API_KEY`,
 - Found on the way: with an invalid OpenAI key the bot answers "Hmm, daar heb ik helaas
   geen specifieke informatie over" (looks like a KB gap, no contact details) and
   `/health` still reports openai `healthy` — it only checks that a key is set.
+
+Resolved 2026-10-23: all five new values set on Railway, `e69b3e0` deployed. Verified:
+`chat/completions` and `embeddings` 200 in the logs, new admin key 200 / missing or wrong
+key 401, portal login and a real track & trace (Wilco). Old MailerSend token and
+StatusWeb credentials revoked afterwards; no unusual usage on 21–22 Oct. Hergebruik
+replay in production: KB answer ("fout op de verpakking"), no escalation.
+
+
+## Chat model gpt-5.4-mini → gpt-5.6-luna (2026-10-23, verified in production)
+
+- `d35de3d`: every chat call passes `reasoning_effort="none"`. Without it luna rejects any
+  `temperature` but 1 (every chat would fail), and with reasoning on it spent the 10-token
+  budget of `detect_ticket_intent` thinking — "hoeveel kost een bigbag boomschors?" came
+  back empty and became `giving_name`. Both models accept temperature with reasoning off.
+- RAG evaluation (Docker, same KB): `evaluate_rag.py` used `OPENAI_CHAT_MODEL` as its own
+  judge, so luna first scored 59/67 grading itself. With `EVAL_JUDGE_MODEL=gpt-5.4-mini`
+  both score 57/67. Luna: hallucination 3→4/7, cross-product 8→9/9, keyword score
+  0.50→0.61; FAQ 9→7/10 was noise (PFAS 3/3 correct on replay) plus the return question,
+  which production routes to `return_payment` before the RAG. Latency 1.6→2.8 s.
+  Test-set items on fertiliser and prices are stale since the webshop catalogue.
+- `OPENAI_CHAT_MODEL=gpt-5.6-luna` set on Railway by Wilco; replay of PFAS, a volume
+  follow-up and an English Belgium question correct. Rollback: set it back to `gpt-5.4-mini`.
+- `f414edb`, found on that replay (pre-existing, mini equally): "ik wil iemand spreken",
+  then a new question — the model read the handoff request in the history and answered
+  `__HUMAN_REQUESTED__` about one call in four, so the customer got "Wat is je naam?"
+  again. After a paused handoff that answer now triggers one retry without history.
+  Production replay 6/6 answered the question.

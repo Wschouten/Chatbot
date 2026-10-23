@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 292 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 298 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -29,6 +29,8 @@ docker-compose up --build
 # RAG evaluation — BILLS THE OPENAI KEY. Only run when retrieval behaviour changes,
 # and then run it before AND after so you have a comparison.
 cd backend && python evaluate_rag.py
+# Comparing chat models: pin the judge (EVAL_JUDGE_MODEL=gpt-5.4-mini), otherwise each
+# model grades its own answers (luna scored 59/67 that way, 57/67 judged by mini).
 # Needs Python 3.11 (ChromaDB breaks on 3.14): run it in the image, one container per
 # version, each with its own empty data dir — `git archive <commit> backend` into a
 # scratch dir, mount it at /app/backend, `--env-file backend/.env`, ingest, then evaluate.
@@ -186,7 +188,11 @@ Every item below has broken production at least once.
 - **Never commit `portal.db`.** A baked-in snapshot resets every admin label, note and
   status on each deploy.
 - **Changing `OPENAI_EMBEDDING_MODEL`** requires wiping `chroma_db/` so everything is
-  re-embedded. The chat model can be swapped freely.
+  re-embedded. The chat model (`OPENAI_CHAT_MODEL`, `gpt-5.6-luna` since 2026-10-23) can
+  be swapped on Railway, but every `chat.completions.create` must keep
+  `reasoning_effort="none"`: a reasoning model otherwise rejects `temperature` and spends
+  the 5–10 token classifier budgets thinking (empty answer → wrong intent).
+  `test_reasoning_model_regressions.py` counts the call sites.
 
 ## Deploy
 
