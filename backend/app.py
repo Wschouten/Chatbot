@@ -1577,6 +1577,8 @@ def _handle_chat(request_id: str) -> Response:
             return _reply(resp)
         return None
 
+    paused_for_question = False  # see the __HUMAN_REQUESTED__ retry before the RAG reply
+
     if current_state == 'awaiting_name':
         phone_reply = _handoff_phone_reply()
         if phone_reply:
@@ -1597,6 +1599,7 @@ def _handle_chat(request_id: str) -> Response:
             # User is asking something else — answer it, but keep the name/email
             # collected so far so a later handoff doesn't start from scratch.
             _pause_handoff()
+            paused_for_question = True
             # Fall through to RAG processing below (don't return here)
 
         else:  # 'giving_name'
@@ -1665,6 +1668,7 @@ def _handle_chat(request_id: str) -> Response:
             elif intent == 'new_question':
                 # User asking something else — answer it, but keep what we have.
                 _pause_handoff()
+                paused_for_question = True
                 # Fall through to RAG processing below
 
             else:
@@ -2231,6 +2235,15 @@ def _handle_chat(request_id: str) -> Response:
     # Fallback to RAG (with conversation history for context)
     logger.debug("Querying RAG for: %s (language: %s)", user_message, detected_lang)
     response_text = rag_engine.get_answer(user_message, chat_history=chat_history, language=detected_lang)
+
+    # A new question during the handoff: the history still ends in "ik wil iemand
+    # spreken", and about one call in four the model answered __HUMAN_REQUESTED__ to
+    # "hoeveel kost een bigbag boomschors?" — the customer got "Wat is je naam?"
+    # again (gpt-5.4-mini and gpt-5.6-luna alike, 2026-10-23). The question was
+    # already judged unrelated to the handoff, so ask once more without the history;
+    # if it still wants a human, the question itself asks for one.
+    if paused_for_question and "__HUMAN_REQUESTED__" in response_text:
+        response_text = rag_engine.get_answer(user_message, chat_history=[], language=detected_lang)
 
     # Check for Human Contact Request - user explicitly wants to speak with someone
     if "__HUMAN_REQUESTED__" in response_text:

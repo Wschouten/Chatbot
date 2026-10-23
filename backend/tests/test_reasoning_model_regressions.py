@@ -32,3 +32,37 @@ def test_classifier_sends_reasoning_effort_none():
     assert engine.detect_ticket_intent("hoeveel kost een bigbag boomschors?") == "new_question"
     kwargs = engine.openai_client.chat.completions.create.call_args.kwargs
     assert kwargs["reasoning_effort"] == "none"
+
+
+def _client():
+    import app as flask_app
+
+    flask_app.app.config["TESTING"] = True
+    flask_app.limiter.enabled = False
+    flask_app.rag_engine.detect_language = MagicMock(return_value="nl")
+    return flask_app, flask_app.app.test_client()
+
+
+def _post(client, sid, message):
+    resp = client.post("/api/chat", json={"message": message, "session_id": sid})
+    assert resp.status_code == 200
+    return resp.get_json()["response"]
+
+
+def test_new_question_during_handoff_is_answered_not_handed_off_again():
+    """Production replay 2026-10-23: "ik wil iemand spreken", then "hoeveel kost een
+    bigbag boomschors?" got "Wat is je naam?" again whenever the model read the
+    handoff request in the history as a fresh one."""
+    import uuid
+    from unittest.mock import patch
+
+    flask_app, client = _client()
+    sid = f"test_{uuid.uuid4().hex[:12]}"
+    model = lambda q, chat_history=None, language="nl": (  # noqa: E731
+        "__HUMAN_REQUESTED__" if chat_history else "Een bigbag kost € 219,95.")
+
+    with patch.object(flask_app.rag_engine, "get_answer", side_effect=model), \
+         patch.object(flask_app.rag_engine, "detect_ticket_intent", return_value="new_question"):
+        assert "naam" in _post(client, sid, "ik wil iemand spreken")
+        assert _post(client, sid, "hoeveel kost een bigbag boomschors?") == "Een bigbag kost € 219,95."
+    assert flask_app.get_session_state(sid).get("state") != "awaiting_name"
