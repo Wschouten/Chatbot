@@ -436,12 +436,38 @@
 
         const CONSENT_KEY = 'gc_chatbot_consent';
         const SESSION_KEY = 'gc_chatbot_session';
+        // The conversation survives page navigation and links opened in a new tab
+        // (bot links use noopener, which starts a new tab with an empty sessionStorage),
+        // so it lives in localStorage and expires after a period of inactivity.
+        const HISTORY_KEY = 'gc_chatbot_history';
+        const OPEN_KEY = 'gc_chatbot_open';
+        const ACTIVE_KEY = 'gc_chatbot_last_active';
+        const IDLE_MS = 2 * 60 * 60 * 1000; // ponytail: fixed 2h idle expiry, make it a data- attribute if the shop wants another value
+
+        function loadHistory() {
+            try { return JSON.parse(localStorage.getItem(HISTORY_KEY)) || []; } catch (e) { return []; }
+        }
+
+        // Drop an idle conversation, so a shared computer does not show it to the next visitor.
+        const lastActive = Number(localStorage.getItem(ACTIVE_KEY)) || 0;
+        if (Date.now() - lastActive > IDLE_MS) {
+            [SESSION_KEY, HISTORY_KEY, OPEN_KEY, ACTIVE_KEY].forEach(k => localStorage.removeItem(k));
+        }
+
+        function remember(text, sender) {
+            const history = loadHistory();
+            history.push([text, sender]);
+            try {
+                localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
+                localStorage.setItem(ACTIVE_KEY, String(Date.now()));
+            } catch (e) { /* storage full or blocked: the chat still works, it just won't persist */ }
+        }
 
         // Check existing consent
         function checkConsent() {
             if (localStorage.getItem(CONSENT_KEY) === 'accepted') {
                 hasConsent = true;
-                sessionId = sessionStorage.getItem(SESSION_KEY);
+                sessionId = localStorage.getItem(SESSION_KEY);
                 consentOverlay.classList.add('gc-hidden');
                 if (!sessionId) fetchSession();
             } else if (sessionStorage.getItem(CONSENT_KEY) === 'declined') {
@@ -467,7 +493,7 @@
                 const data = response.ok ? await response.json() : {};
                 if (data.session_id) {
                     sessionId = data.session_id;
-                    sessionStorage.setItem(SESSION_KEY, sessionId);
+                    localStorage.setItem(SESSION_KEY, sessionId);
                     return;
                 }
             } catch (error) {
@@ -476,16 +502,20 @@
             // A 429/500 used to leave sessionId null, and every such visitor shared
             // one server-side session. Fall back to a unique local id instead.
             sessionId = 'fallback_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
-            sessionStorage.setItem(SESSION_KEY, sessionId);
+            localStorage.setItem(SESSION_KEY, sessionId);
         }
 
         // Toggle chat
-        function toggleChat() {
+        function toggleChat(restoring) {
             isOpen = !isOpen;
+            if (restoring !== true) {
+                try { localStorage.setItem(OPEN_KEY, isOpen ? '1' : ''); } catch (e) { /* not persisted */ }
+            }
             if (isOpen) {
                 widget.classList.add('gc-active');
                 if (localStorage.getItem(CONSENT_KEY) === 'accepted') {
-                    input.focus();
+                    // No focus on restore: on a phone it would pop the keyboard on every page.
+                    if (restoring !== true) input.focus();
                 } else if (sessionStorage.getItem(CONSENT_KEY) !== 'declined') {
                     consentOverlay.classList.remove('gc-hidden');
                 }
@@ -553,6 +583,7 @@
             isSending = true;
             sendBtn.disabled = true;
             appendMessage(text, 'user');
+            remember(text, 'user');
             input.value = '';
 
             const typingId = showTyping();
@@ -576,7 +607,9 @@
                     throw new Error('Server returned an unexpected response.');
                 }
                 const data = await response.json();
-                appendMessage(data.response || 'Sorry, an error occurred. Please try again.', 'bot');
+                const reply = data.response || 'Sorry, an error occurred. Please try again.';
+                appendMessage(reply, 'bot');
+                remember(reply, 'bot');
             } catch (error) {
                 removeTyping(typingId);
                 appendMessage('Connection error. Please check your internet and try again.', 'bot');
@@ -619,6 +652,13 @@
             welcomeDiv.innerHTML = renderBotMessage(CONFIG.welcomeMessage) +
                 '<br><small style="color:#666;font-size:12px;">(I also speak English!)</small>';
             chatBody.appendChild(welcomeDiv);
+        }
+
+        // Restore the conversation from a previous page, only when the visitor consented
+        // (without consent nothing is sent, so nothing is stored either).
+        if (hasConsent) {
+            loadHistory().forEach(([text, sender]) => appendMessage(text, sender === 'user' ? 'user' : 'bot'));
+            if (localStorage.getItem(OPEN_KEY)) toggleChat(true);
         }
     }
 
