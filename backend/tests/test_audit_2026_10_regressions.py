@@ -632,3 +632,26 @@ def test_widget_is_not_rate_limited():
         flask_app.limiter.enabled = False
         flask_app.limiter.reset()
     assert codes == {200}
+
+
+def test_session_save_survives_a_briefly_locked_file():
+    """The 'known flaky test' (2026-10-09 → 2026-11-10): on Windows a scanner holds
+    the freshly written session file, os.replace raises PermissionError and the chat
+    answered "Er ging iets mis". Hit a different multi-message test each run."""
+    import app as flask_app
+    from unittest.mock import patch
+
+    real_replace = os.replace
+    calls = {"n": 0}
+
+    def locked_twice(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:
+            raise PermissionError(5, "Toegang geweigerd")
+        return real_replace(src, dst)
+
+    sid = "test_locked_" + uuid.uuid4().hex[:8]
+    with patch.object(flask_app.os, "replace", side_effect=locked_twice):
+        flask_app.save_session_state(sid, {"state": "inactive", "marker": 1})
+    assert calls["n"] == 3
+    assert flask_app.get_session_state(sid)["marker"] == 1

@@ -5,6 +5,7 @@ import re
 import json
 import datetime
 import secrets
+import time
 import sys
 import uuid
 from functools import wraps
@@ -1042,7 +1043,18 @@ def save_session_state(session_id: str, state: dict[str, Any]) -> None:
     tmp_path = f"{path}.tmp.{secrets.token_hex(6)}"
     with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(state, f)
-    os.replace(tmp_path, path)
+    # On Windows a virus scanner or the search indexer briefly holds a freshly written
+    # file open, and os.replace then fails with "Access denied" — that was the "flaky
+    # multi-message test" (~1 in 5 full runs, a different test each time). Linux
+    # (Railway) never hits this; a few short retries cover it locally.
+    for attempt in range(5):
+        try:
+            os.replace(tmp_path, path)
+            return
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def format_shipping_response(result: dict[str, Any], order_id: str) -> str:

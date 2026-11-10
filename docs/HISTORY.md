@@ -214,3 +214,13 @@ headless browser against a mock API (same tab, new tab, closed stays closed, idl
 expiry, no console errors) and `/widget.js` on Railway serves it. Guarded by
 `tests/test_widget_persistence.py` (source check; no JS runner in the repo).
 Not yet checked on the real storefront.
+
+## The "known flaky test" solved (2026-11-10)
+
+Open since 2026-10-09: about 1 in 10 full runs failed a multi-message chat test. 20
+runs reproduced it 4 times, each time a *different* test; the captured log showed
+`Unhandled chat error: [WinError 5] Toegang geweigerd: '...json.tmp.xxx' -> '...json'`.
+Not shared state between modules: a Windows scanner/indexer briefly holds the session
+file just written, and `os.replace` refuses. `save_session_state` now retries up to five
+times (50–250 ms). Regression test mocks two `PermissionError`s (fails without the fix);
+full suite 30/30 green afterwards. Production (Linux) was never affected.

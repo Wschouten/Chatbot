@@ -17,7 +17,7 @@ Primary bot language is Dutch; English is detected per message.
 ## Commands
 
 ```bash
-# Tests — 301 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
+# Tests — 302 tests, ~3s. Works from the repo root too: conftest.py pins the CWD.
 cd backend && python -m pytest
 
 # Run locally (Flask dev server) → http://127.0.0.1:5000
@@ -248,11 +248,12 @@ requester (accepted risks while production runs in email mode); **PII in chat lo
 only email addresses are redacted, decided 2026-10-09 (Wilco). KB gaps: no dimensions for
 the solid plastic posts, no fraction/price/volume for the Douglas Premium big bag.
 
-**Known flaky test** (2026-10-09, not yet explained): in the full suite roughly 1 run in
-10 fails one of the multi-message chat tests (most often
-`test_sess_lhvfgm_phone_number_after_handoff_is_forwarded`); in isolation it passed 15/15.
-No parallel pytest process was running, so the conftest purge is not the cause. Re-run
-before assuming a regression, and look for state shared between test modules.
+**The "flaky test" was Windows file locking** (solved 2026-11-10): a scanner or the
+search indexer briefly held the freshly written session file, so `os.replace` in
+`save_session_state` raised `PermissionError` and a random multi-message chat test got
+"Er ging iets mis" (4 in 20 full runs). It now retries a few times; 30/30 green since.
+Linux/Railway never had it. If a chat test fails locally again, read the
+`Unhandled chat error` line in the captured log before suspecting shared state.
 
 ### What this taught, and is still true
 
