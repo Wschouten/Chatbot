@@ -140,6 +140,10 @@ Every item below has broken production at least once.
   `!important` beats the theme. When pinning a fixed size, pin `min-width`/`max-width`
   as well, not just `width`: the theme's `min-width` stretched the round toggle button
   into an oval in production (`59ed947`, see [widget.js:74-79](frontend/static/widget.js)).
+- **Widget state lives in `localStorage`, not `sessionStorage`** (`0eb21b4`). Bot links
+  open with `noopener`, which starts a tab with an empty `sessionStorage` — a per-tab
+  session id meant a fresh conversation on every link click, and the transcript was not
+  stored at all. Session id, transcript and open state expire after 2 h idle (`IDLE_MS`).
 - **The output gate only sees model output.** `check_output` ([rag_engine.py](backend/rag_engine.py))
   rejects foreign scripts, leaked system vocabulary and the wrong language, retries once
   and otherwise returns a safe answer. It cannot see the canned flow strings in
@@ -232,7 +236,8 @@ the token exists. Background:
 ## Change history
 
 Every round of work since July — the 2026-07-29 chatlog plan, `sess_jLgTn7`, the
-rebrand, the 2026-10-09 code audit and chatlog analysis, the 2026-10-20 webshop catalogue — is in
+rebrand, the 2026-10-09 code audit and chatlog analysis, the 2026-10-20 webshop catalogue,
+the 2026-11-10 widget persistence — is in
 [docs/HISTORY.md](docs/HISTORY.md), with commits and what production verification
 found. Plans: [AUDIT-2026-10-09.md](AUDIT-2026-10-09.md),
 [improvement-plan/CHATLOG-ANALYSE-2026-10-09.md](improvement-plan/CHATLOG-ANALYSE-2026-10-09.md).

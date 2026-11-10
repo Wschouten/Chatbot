@@ -201,3 +201,16 @@ replay in production: KB answer ("fout op de verpakking"), no escalation.
   `__HUMAN_REQUESTED__` about one call in four, so the customer got "Wat is je naam?"
   again. After a paused handoff that answer now triggers one retry without history.
   Production replay 6/6 answered the question.
+
+## Widget keeps the conversation across pages (2026-11-10, live)
+
+Reported by Wilco: navigating to another page on boomschors.nl lost the conversation.
+The server session survived same-tab navigation (id in `sessionStorage`), but the widget
+re-rendered empty and closed, so it *looked* forgotten; a bot link (`target=_blank`,
+`noopener`) opened a tab with an empty `sessionStorage` and a genuinely new session.
+`0eb21b4`: session id, transcript (last 100) and open/closed state in `localStorage`,
+expiring after 2 h idle (shared computers); only stored after consent. Verified in a
+headless browser against a mock API (same tab, new tab, closed stays closed, idle
+expiry, no console errors) and `/widget.js` on Railway serves it. Guarded by
+`tests/test_widget_persistence.py` (source check; no JS runner in the repo).
+Not yet checked on the real storefront.
